@@ -4,6 +4,10 @@
 
 Implementation of [HS-TasNet](https://arxiv.org/abs/2402.17701), "Real-time Low-latency Music Source Separation using Hybrid Spectrogram-TasNet", proposed by the research team at L-Acoustics
 
+## Sponsors
+
+This open sourced work is sponsored by [Sweet Spot](https://github.com/sweetspotsoundsystem)
+
 ## Citations
 
 ```bibtex
