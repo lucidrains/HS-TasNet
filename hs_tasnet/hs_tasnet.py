@@ -69,6 +69,11 @@ class HSTasNet(Module):
     ):
         super().__init__()
 
+
+    @property
+    def num_parameters(self):
+        return sum([p.numel() for p in self.parameters()])
+
     def forward(
         self,
         audio

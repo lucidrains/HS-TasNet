@@ -22,3 +22,4 @@ def test_model():
     transformed = model(audio)
 
     assert audio.shape == transformed.shape
+    assert model.num_parameters == 0
