@@ -16,10 +16,12 @@ def test_memory_lstm():
 
 def test_model():
     from hs_tasnet.hs_tasnet import HSTasNet
-    model = HSTasNet(512)
+    model = HSTasNet(512, 1024)
 
-    audio = torch.randn(1, 8192 * 2)
-    transformed = model(audio)
+    spec = torch.randn(1, 256, 512)
+    waveform = torch.randn(1, 256, 512)
 
-    assert audio.shape == transformed.shape
-    assert model.num_parameters == 0
+    spec_out, waveform_out = model(spec, waveform)
+
+    assert spec.shape == spec_out.shape
+    assert waveform.shape == waveform_out.shape

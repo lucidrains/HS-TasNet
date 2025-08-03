@@ -1,8 +1,13 @@
 from __future__ import annotations
+from functools import partial
 
 import torch
-from torch import Tensor, tensor, is_tensor
+from torch import Tensor, tensor, is_tensor, cat
 from torch.nn import LSTM, Module, ModuleList
+
+# constants
+
+LSTM = partial(LSTM, batch_first = True)
 
 # functions
 
@@ -24,8 +29,8 @@ class MemoryLSTM(Module):
         super().__init__()
         dim_inner = default(dim_inner, dim)
 
-        self.lstm1 = LSTM(dim, dim_inner, batch_first = True)
-        self.lstm2 = LSTM(dim_inner, dim, batch_first = True)
+        self.lstm1 = LSTM(dim, dim_inner)
+        self.lstm2 = LSTM(dim_inner, dim)
 
     def forward(
         self,
@@ -65,9 +70,27 @@ class MemoryLSTM(Module):
 class HSTasNet(Module):
     def __init__(
         self,
-        dim
+        dim,
+        dim_inner = None,
+        small = False
     ):
         super().__init__()
+
+        self.small = small
+
+        # they do a single layer of lstm in their "small" variant
+
+        rnn_klass = LSTM if small else MemoryLSTM
+
+        self.pre_spec_branch = rnn_klass(dim, dim_inner)
+        self.post_spec_branch = rnn_klass(dim, dim_inner)
+
+        dim_fusion_branch_input = dim * (2 if not small else 1)
+
+        self.fusion_branch = rnn_klass(dim_fusion_branch_input, dim_inner)
+
+        self.pre_waveform_branch = rnn_klass(dim, dim_inner)
+        self.post_waveform_branch = rnn_klass(dim, dim_inner)
 
     @property
     def num_parameters(self):
@@ -75,23 +98,42 @@ class HSTasNet(Module):
 
     def forward(
         self,
-        audio
+        spec,
+        waveform,
+        hiddens = None # handle properly later
     ):
-        return audio
 
-class HSTasNetSmall(Module):
-    def __init__(
-        self,
-        dim
-    ):
-        super().__init__()
+        spec_residual, waveform_residual = spec, waveform
 
-    @property
-    def num_parameters(self):
-        return sum([p.numel() for p in self.parameters()])
+        spec, _ = self.pre_spec_branch(spec)
 
-    def forward(
-        self,
-        audio
-    ):
-        return audio
+        waveform, _ = self.pre_waveform_branch(waveform)
+
+        # if small, they just sum the two branches
+
+        if self.small:
+            fusion_input = spec + waveform
+        else:
+            fusion_input = cat((spec, waveform), dim = -1)
+
+        # fusing
+
+        fused, _ = self.fusion_branch(fusion_input)
+
+        # split if not small, handle small next week
+
+        fused_spec, fused_waveform = fused.chunk(2, dim = -1)
+
+        # residual from encoded
+
+        spec = fused_spec + spec_residual
+
+        waveform = fused_waveform + waveform_residual
+
+        # layer for both branches
+
+        spec, _ = self.post_spec_branch(spec)
+
+        waveform, _ = self.post_waveform_branch(waveform)
+
+        return spec, waveform
