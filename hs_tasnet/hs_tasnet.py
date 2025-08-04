@@ -9,6 +9,13 @@ from einx import add, multiply
 from einops import rearrange, pack, unpack
 from einops.layers.torch import Rearrange
 
+# ein tensor notation:
+
+# b - batch
+# s - sources
+# n - length (audio or embed)
+# d - dimension / channels
+
 # constants
 
 LSTM = partial(LSTM, batch_first = True)
@@ -96,7 +103,9 @@ class HSTasNet(Module):
 
         # handle audio shapes
 
-        if audio.ndim == 2: # (b l) -> (b c l)
+        audio_is_squeezed = audio.ndim == 2 # input audio is (batch, length) shape, make sure output is correspondingly squeezed
+
+        if audio_is_squeezed: # (b l) -> (b c l)
             audio = rearrange(audio, 'b l -> b 1 l')
 
         assert not (self.stereo and audio.shape[1] != 2), 'audio channels must be 2 if training stereo'
@@ -172,6 +181,9 @@ class HSTasNet(Module):
         waveform_per_source = self.conv_decode(basis_per_source)
 
         waveform_per_source = rearrange(waveform_per_source, '(b source) ... -> b source ...', b = batch)
+
+        if audio_is_squeezed:
+            waveform_per_source = rearrange(waveform_per_source, 'b s 1 n -> b s n')
 
         if exists(targets):
             recon_loss = F.l1_loss(waveform_per_source, targets) # they claim a simple l1 loss is better than all the complicated stuff of past
