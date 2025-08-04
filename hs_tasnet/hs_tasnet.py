@@ -2,8 +2,11 @@ from __future__ import annotations
 from functools import partial, wraps
 
 import torch
-from torch import Tensor, tensor, is_tensor, cat
+from torch import nn, Tensor, tensor, is_tensor, cat
 from torch.nn import LSTM, Module, ModuleList
+
+from einops import rearrange
+from einops.layers.torch import Rearrange
 
 # constants
 
@@ -33,10 +36,30 @@ def residual(fn):
 class HSTasNet(Module):
     def __init__(
         self,
-        dim = 500,       # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
-        small = False,   # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
+        dim = 500,          # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
+        small = False,      # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
+        stereo = False,
+        num_basis = 1024,
+        segment_len = 1024,
+        overlap_len = 512,
+        num_sources = 4,    # drums, bass, vocals, other
     ):
         super().__init__()
+
+        # waveform branch encoder
+
+        audio_channels = 2 if stereo else 1
+
+        self.stereo = stereo
+
+        self.conv_encode = nn.Conv1d(audio_channels, num_basis * 2, segment_len, stride = overlap_len)
+
+        self.basis_to_embed = nn.Sequential(
+            nn.Conv1d(num_basis, dim, 1),
+            Rearrange('b c l -> b l c')
+        )
+
+        self.conv_decode = nn.ConvTranspose1d(num_basis, audio_channels, segment_len, stride = overlap_len)
 
         # they do a single layer of lstm in their "small" variant
 
@@ -61,10 +84,29 @@ class HSTasNet(Module):
 
     def forward(
         self,
+        audio,
         spec,
-        waveform,
         hiddens = None
     ):
+        # handle audio shapes
+
+        if audio.ndim == 2: # (b l) -> (b c l)
+            audio = rearrange(audio, 'b l -> b 1 l')
+
+        assert not (self.stereo and audio.shape[1] != 2), 'audio channels must be 2 if training stereo'
+
+        # handle encoding as detailed in original tasnet
+        # to keep non-negative, they do a glu with relu on main branch
+
+        to_relu, to_sigmoid = self.conv_encode(audio).chunk(2, dim = 1)
+
+        basis = to_relu.relu() * to_sigmoid.sigmoid() # non-negative basis (1024)
+
+        # basis to waveform embed for mask estimation
+        # paper mentions linear for any mismatched dimensions
+
+        waveform = self.basis_to_embed(basis)
+
         # handle previous hiddens
 
         hiddens = default(hiddens, (None,) * 5)
