@@ -1,27 +1,21 @@
 import pytest
+param = pytest.mark.parametrize
 
 import torch
 
-def test_memory_lstm():
-    from hs_tasnet.hs_tasnet import MemoryLSTM
-
-    memory_lstm = MemoryLSTM(512, 1024)
-
-    feats = torch.randn(3, 1024, 512)
-
-    out1, hiddens1 = memory_lstm(feats)
-    out2, hiddens2 = memory_lstm(feats, hiddens1)
-
-    assert out1.shape == out2.shape == feats.shape
-
-def test_model():
+@param('small', (False, True))
+def test_model(
+    small
+):
     from hs_tasnet.hs_tasnet import HSTasNet
-    model = HSTasNet(512, 1024)
+    model = HSTasNet(512, 1024, small = small)
 
     spec = torch.randn(1, 256, 512)
     waveform = torch.randn(1, 256, 512)
 
-    spec_out, waveform_out = model(spec, waveform)
+    (spec_out, waveform_out), hiddens1 = model(spec, waveform)
+    (spec_out, waveform_out), hiddens2 = model(spec, waveform, hiddens = hiddens1)
+    (spec_out, waveform_out), hiddens3 = model(spec, waveform, hiddens = hiddens2)
 
     assert spec.shape == spec_out.shape
     assert waveform.shape == waveform_out.shape

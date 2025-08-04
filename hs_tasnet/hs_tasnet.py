@@ -17,80 +17,32 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
-# "memory lstm"
-# as described in section 3.3, it is just two lstm layers with identity skip connection
-
-class MemoryLSTM(Module):
-    def __init__(
-        self,
-        dim,
-        dim_inner = None
-    ):
-        super().__init__()
-        dim_inner = default(dim_inner, dim)
-
-        self.lstm1 = LSTM(dim, dim_inner)
-        self.lstm2 = LSTM(dim_inner, dim)
-
-    def forward(
-        self,
-        feats,
-        hiddens: tuple[Tensor, Tensor] | None = None
-    ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
-
-        # handle previous hiddens
-
-        hidden1 = hidden2 = None
-
-        if exists(hiddens):
-            hidden1, hidden2 = hiddens
-
-        # store residual
-
-        residual = feats
-
-        # the two lstms
-
-        inner, next_hidden1 = self.lstm1(feats, hidden1)
-
-        out, next_hidden2 = self.lstm2(inner, hidden2)
-
-        # add the residual
-
-        out_with_residual = out + residual
-
-        # pass out the next hiddens as tuple of two tensors
-
-        next_hiddens = (next_hidden1, next_hidden2)
-
-        return out_with_residual, next_hiddens
-
 # classes
 
 class HSTasNet(Module):
     def __init__(
         self,
-        dim,
-        dim_inner = None,
-        small = False
+        dim = 500,      # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
+        small = False   # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
     ):
         super().__init__()
 
-        self.small = small
-
         # they do a single layer of lstm in their "small" variant
 
-        rnn_klass = LSTM if small else MemoryLSTM
+        self.small = small
+        lstm_num_layers = 1 if small else 2
 
-        self.pre_spec_branch = rnn_klass(dim, dim_inner)
-        self.post_spec_branch = rnn_klass(dim, dim_inner)
+        # lstms
 
-        dim_fusion_branch_input = dim * (2 if not small else 1)
+        self.pre_spec_branch = LSTM(dim, dim, lstm_num_layers)
+        self.post_spec_branch = LSTM(dim, dim, lstm_num_layers)
 
-        self.fusion_branch = rnn_klass(dim_fusion_branch_input, dim_inner)
+        dim_fusion = dim * (2 if not small else 1)
 
-        self.pre_waveform_branch = rnn_klass(dim, dim_inner)
-        self.post_waveform_branch = rnn_klass(dim, dim_inner)
+        self.fusion_branch = LSTM(dim_fusion, dim_fusion, lstm_num_layers)
+
+        self.pre_waveform_branch = LSTM(dim, dim, lstm_num_layers)
+        self.post_waveform_branch = LSTM(dim, dim, lstm_num_layers)
 
     @property
     def num_parameters(self):
@@ -100,14 +52,27 @@ class HSTasNet(Module):
         self,
         spec,
         waveform,
-        hiddens = None # handle properly later
+        hiddens = None
     ):
+        # handle previous hiddens
+
+        hiddens = default(hiddens, (None,) * 5)
+
+        (
+            pre_spec_hidden,
+            pre_waveform_hidden,
+            fusion_hidden,
+            post_spec_hidden,
+            post_waveform_hidden
+        ) = hiddens
+
+        # residuals
 
         spec_residual, waveform_residual = spec, waveform
 
-        spec, _ = self.pre_spec_branch(spec)
+        spec, next_pre_spec_hidden = self.pre_spec_branch(spec, pre_spec_hidden)
 
-        waveform, _ = self.pre_waveform_branch(waveform)
+        waveform, next_pre_waveform_hidden = self.pre_waveform_branch(waveform, pre_waveform_hidden)
 
         # if small, they just sum the two branches
 
@@ -118,11 +83,14 @@ class HSTasNet(Module):
 
         # fusing
 
-        fused, _ = self.fusion_branch(fusion_input)
+        fused, next_fusion_hidden = self.fusion_branch(fusion_input, fusion_hidden)
 
         # split if not small, handle small next week
 
-        fused_spec, fused_waveform = fused.chunk(2, dim = -1)
+        if self.small:
+            fused_spec, fused_waveform = fused, fused
+        else:
+            fused_spec, fused_waveform = fused.chunk(2, dim = -1)
 
         # residual from encoded
 
@@ -132,8 +100,20 @@ class HSTasNet(Module):
 
         # layer for both branches
 
-        spec, _ = self.post_spec_branch(spec)
+        spec, next_post_spec_hidden = self.post_spec_branch(spec, post_spec_hidden)
 
-        waveform, _ = self.post_waveform_branch(waveform)
+        waveform, next_post_waveform_hidden = self.post_waveform_branch(waveform, post_waveform_hidden)
 
-        return spec, waveform
+        # outputs
+
+        outputs = (spec, waveform)
+
+        lstm_hiddens = (
+            next_pre_spec_hidden,
+            next_pre_waveform_hidden,
+            next_fusion_hidden,
+            next_post_spec_hidden,
+            next_post_waveform_hidden
+        )
+
+        return outputs, lstm_hiddens
