@@ -5,7 +5,8 @@ import torch
 from torch import nn, Tensor, tensor, is_tensor, cat
 from torch.nn import LSTM, Module, ModuleList
 
-from einops import rearrange
+from einx import add, multiply
+from einops import rearrange, pack, unpack
 from einops.layers.torch import Rearrange
 
 # constants
@@ -59,6 +60,8 @@ class HSTasNet(Module):
             Rearrange('b c l -> b l c')
         )
 
+        self.to_waveform_masks = nn.Linear(dim, num_sources, bias = False)
+
         self.conv_decode = nn.ConvTranspose1d(num_basis, audio_channels, segment_len, stride = overlap_len)
 
         # they do a single layer of lstm in their "small" variant
@@ -86,8 +89,11 @@ class HSTasNet(Module):
         self,
         audio,
         spec,
-        hiddens = None
+        hiddens = None,
+        targets = None
     ):
+        batch = audio.shape[0]
+
         # handle audio shapes
 
         if audio.ndim == 2: # (b l) -> (b c l)
@@ -156,6 +162,19 @@ class HSTasNet(Module):
         spec, next_post_spec_hidden = residual(self.post_spec_branch)(spec, post_spec_hidden)
 
         waveform, next_post_waveform_hidden = residual(self.post_waveform_branch)(waveform, post_waveform_hidden)
+
+        # waveform mask
+
+        waveform_mask = self.to_waveform_masks(waveform).softmax(dim = -1)
+
+        basis_per_source = multiply('b basis n, b n source -> (b source) basis n', basis, waveform_mask)
+
+        waveform_per_source = self.conv_decode(basis_per_source)
+
+        waveform_per_source = rearrange(waveform_per_source, '(b source) ... -> b source ...', b = batch)
+
+        if exists(targets):
+            recon_loss = F.l1_loss(waveform_per_source, targets) # they claim a simple l1 loss is better than all the complicated stuff of past
 
         # outputs
 
