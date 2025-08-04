@@ -8,7 +8,7 @@ def test_model(
     small
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
-    model = HSTasNet(512, 1024, small = small)
+    model = HSTasNet(512, small = small)
 
     spec = torch.randn(1, 256, 512)
     waveform = torch.randn(1, 256, 512)
