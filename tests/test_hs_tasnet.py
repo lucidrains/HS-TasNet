@@ -10,14 +10,18 @@ def test_model(
     stereo
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
+
     model = HSTasNet(512, small = small, stereo = stereo)
 
-    audio = torch.randn(1, 2 if stereo else 1, 352800)
+    shape = (2, 1024 * 12) if stereo else (1024 * 12,)
 
-    spec = torch.randn(1, 688, 512)
+    audio = torch.randn(3, *shape)
+    targets = torch.rand(3, 4, *shape)
 
-    (spec_out, waveform_out), hiddens1 = model(audio, spec)
-    (spec_out, waveform_out), hiddens2 = model(audio, spec, hiddens = hiddens1)
-    (spec_out, waveform_out), hiddens3 = model(audio, spec, hiddens = hiddens2)
+    loss = model(audio, targets = targets)
+    loss.backward()
 
-    assert spec.shape == spec_out.shape
+    # after much training
+
+    pred1, hiddens1 = model(audio)
+    pred2, hiddens1 = model(audio, hiddens = hiddens1)

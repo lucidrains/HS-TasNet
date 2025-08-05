@@ -2,7 +2,8 @@ from __future__ import annotations
 from functools import partial, wraps
 
 import torch
-from torch import nn, Tensor, tensor, is_tensor, cat
+import torch.nn.functional as F
+from torch import nn, Tensor, tensor, is_tensor, cat, stft, istft, hann_window, view_as_real, view_as_complex
 from torch.nn import LSTM, Module, ModuleList
 
 from einx import add, multiply
@@ -12,9 +13,11 @@ from einops.layers.torch import Rearrange
 # ein tensor notation:
 
 # b - batch
-# s - sources
+# t - sources
 # n - length (audio or embed)
 # d - dimension / channels
+# s - stereo [2]
+# c - complex [2]
 
 # constants
 
@@ -50,26 +53,53 @@ class HSTasNet(Module):
         num_basis = 1024,
         segment_len = 1024,
         overlap_len = 512,
+        n_fft = 1024,
         num_sources = 4,    # drums, bass, vocals, other
     ):
         super().__init__()
+        audio_channels = 2 if stereo else 1
+
+        self.audio_channels = audio_channels
+        self.segment_len = segment_len
+        self.num_sources = num_sources
+
+        # spec branch encoder stft hparams
+
+        self.stft_kwargs = dict(
+            n_fft = n_fft,
+            win_length = segment_len,
+            hop_length = overlap_len,
+        )
+
+        spec_dim_input = (n_fft // 2 + 1) * 2 * audio_channels
+
+        self.spec_encode = nn.Sequential(
+            Rearrange('(b s) f n c -> b n (s f c)', s = audio_channels),
+            nn.Linear(spec_dim_input, dim)
+        )
+
+        self.to_spec_mask = nn.Sequential(
+            nn.Linear(dim, spec_dim_input * num_sources),
+            Rearrange('b n (s f c t) -> (b s) f n c t', c = 2, s = audio_channels, t = num_sources)
+        )
 
         # waveform branch encoder
 
-        audio_channels = 2 if stereo else 1
-
         self.stereo = stereo
 
-        self.conv_encode = nn.Conv1d(audio_channels, num_basis * 2, segment_len, stride = overlap_len)
+        self.conv_encode = nn.Conv1d(audio_channels, num_basis * 2, segment_len, stride = overlap_len, padding = overlap_len)
 
         self.basis_to_embed = nn.Sequential(
             nn.Conv1d(num_basis, dim, 1),
             Rearrange('b c l -> b l c')
         )
 
-        self.to_waveform_masks = nn.Linear(dim, num_sources, bias = False)
+        self.to_waveform_masks = nn.Sequential(
+            nn.Linear(dim, num_sources * num_basis, bias = False),
+            Rearrange('... (t basis) -> ... basis t', t = num_sources)
+        )
 
-        self.conv_decode = nn.ConvTranspose1d(num_basis, audio_channels, segment_len, stride = overlap_len)
+        self.conv_decode = nn.ConvTranspose1d(num_basis, audio_channels, segment_len, stride = overlap_len, padding = overlap_len)
 
         # they do a single layer of lstm in their "small" variant
 
@@ -95,11 +125,13 @@ class HSTasNet(Module):
     def forward(
         self,
         audio,
-        spec,
         hiddens = None,
         targets = None
     ):
-        batch = audio.shape[0]
+        batch, device = audio.shape[0], audio.device
+
+        if exists(targets):
+            assert targets.shape == (batch, self.num_sources, *audio.shape[1:])
 
         # handle audio shapes
 
@@ -109,6 +141,18 @@ class HSTasNet(Module):
             audio = rearrange(audio, 'b l -> b 1 l')
 
         assert not (self.stereo and audio.shape[1] != 2), 'audio channels must be 2 if training stereo'
+
+        # handle spec encoding
+
+        spec_audio_input = rearrange(audio, 'b s ... -> (b s) ...')
+
+        stft_window = hann_window(self.segment_len, device = device)
+
+        complex_spec = stft(spec_audio_input, window = stft_window, **self.stft_kwargs, return_complex = True)
+
+        real_spec = view_as_real(complex_spec)
+
+        spec = self.spec_encode(real_spec)
 
         # handle encoding as detailed in original tasnet
         # to keep non-negative, they do a glu with relu on main branch
@@ -172,25 +216,42 @@ class HSTasNet(Module):
 
         waveform, next_post_waveform_hidden = residual(self.post_waveform_branch)(waveform, post_waveform_hidden)
 
+        # spec mask
+
+        spec_mask = self.to_spec_mask(spec).softmax(dim = -1)
+
+        real_spec_per_source = multiply('b ..., b ... t -> (b t) ...', real_spec, spec_mask)
+
+        complex_spec_per_source = view_as_complex(real_spec_per_source)
+
+        recon_audio_from_spec = istft(complex_spec_per_source, window = stft_window, **self.stft_kwargs, return_complex = False)
+
+        recon_audio_from_spec = rearrange(recon_audio_from_spec, '(b s t) ... -> b t s ...', b = batch, s = self.audio_channels)
+
         # waveform mask
 
         waveform_mask = self.to_waveform_masks(waveform).softmax(dim = -1)
 
-        basis_per_source = multiply('b basis n, b n source -> (b source) basis n', basis, waveform_mask)
+        basis_per_source = multiply('b basis n, b n basis t -> (b t) basis n', basis, waveform_mask)
 
-        waveform_per_source = self.conv_decode(basis_per_source)
+        recon_audio_from_waveform = self.conv_decode(basis_per_source)
 
-        waveform_per_source = rearrange(waveform_per_source, '(b source) ... -> b source ...', b = batch)
+        recon_audio_from_waveform = rearrange(recon_audio_from_waveform, '(b t) ... -> b t ...', b = batch)
+
+        # recon audio
+
+        recon_audio = recon_audio_from_spec + recon_audio_from_waveform
+
+        # take care of l1 loss if target is passed in
 
         if audio_is_squeezed:
-            waveform_per_source = rearrange(waveform_per_source, 'b s 1 n -> b s n')
+            recon_audio = rearrange(recon_audio, 'b s 1 n -> b s n')
 
         if exists(targets):
-            recon_loss = F.l1_loss(waveform_per_source, targets) # they claim a simple l1 loss is better than all the complicated stuff of past
+            recon_loss = F.l1_loss(recon_audio, targets) # they claim a simple l1 loss is better than all the complicated stuff of past
+            return recon_loss
 
         # outputs
-
-        outputs = (spec, waveform)
 
         lstm_hiddens = (
             next_pre_spec_hidden,
@@ -200,4 +261,4 @@ class HSTasNet(Module):
             next_post_waveform_hidden
         )
 
-        return outputs, lstm_hiddens
+        return recon_audio, lstm_hiddens
