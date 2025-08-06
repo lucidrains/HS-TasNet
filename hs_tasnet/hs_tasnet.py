@@ -3,7 +3,7 @@ from functools import partial, wraps
 
 import torch
 import torch.nn.functional as F
-from torch import nn, Tensor, tensor, is_tensor, cat, stft, istft, hann_window, view_as_real, view_as_complex
+from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, istft, hann_window, view_as_real, view_as_complex
 from torch.nn import LSTM, Module, ModuleList
 
 from einx import add, multiply
@@ -22,6 +22,20 @@ from einops.layers.torch import Rearrange
 # constants
 
 LSTM = partial(LSTM, batch_first = True)
+
+# disable complex related functions from torch compile
+
+(
+    stft,
+    istft,
+    view_as_real,
+    view_as_complex
+) = tuple(compiler.disable()(fn) for fn in (
+    stft,
+    istft,
+    view_as_real,
+    view_as_complex
+))
 
 # functions
 
@@ -55,6 +69,7 @@ class HSTasNet(Module):
         overlap_len = 512,
         n_fft = 1024,
         num_sources = 4,    # drums, bass, vocals, other
+        torch_compile = False
     ):
         super().__init__()
         audio_channels = 2 if stereo else 1
@@ -117,6 +132,11 @@ class HSTasNet(Module):
 
         self.pre_waveform_branch = LSTM(dim, dim, lstm_num_layers)
         self.post_waveform_branch = LSTM(dim, dim, lstm_num_layers)
+
+        # torch compile forward
+
+        if torch_compile:
+            self.forward = torch.compile(self.forward)
 
     @property
     def num_parameters(self):
