@@ -69,6 +69,7 @@ class HSTasNet(Module):
         overlap_len = 512,
         n_fft = 1024,
         num_sources = 4,    # drums, bass, vocals, other
+        spec_encode_phase = False,
         torch_compile = False
     ):
         super().__init__()
@@ -89,7 +90,7 @@ class HSTasNet(Module):
         spec_dim_input = (n_fft // 2 + 1) * 2 * audio_channels
 
         self.spec_encode = nn.Sequential(
-            Rearrange('(b s) f n c -> b n (s f c)', s = audio_channels),
+            Rearrange('(b s) f n ... -> b n (s f ...)', s = audio_channels),
             nn.Linear(spec_dim_input, dim)
         )
 
