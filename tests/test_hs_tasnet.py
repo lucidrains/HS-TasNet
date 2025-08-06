@@ -23,7 +23,7 @@ def test_model(
 
     # after much training
 
-    chunk = torch.randn(shape)[..., :1024].numpy()
+    chunk = torch.randn(shape)[..., :512].numpy()
 
     fn = model.init_stream_fn()
 

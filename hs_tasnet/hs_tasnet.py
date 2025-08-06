@@ -47,6 +47,9 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
+def divisible_by(num, den):
+    return (num % den) == 0
+
 def identity(t):
     return t
 
@@ -80,8 +83,11 @@ class HSTasNet(Module):
         audio_channels = 2 if stereo else 1
 
         self.audio_channels = audio_channels
-        self.segment_len = segment_len
         self.num_sources = num_sources
+
+        assert overlap_len < segment_len
+        self.segment_len = segment_len
+        self.overlap_len = overlap_len
 
         # spec branch encoder stft hparams
 
@@ -146,28 +152,50 @@ class HSTasNet(Module):
     def init_stream_fn(self, device = None):
         self.eval()
 
+        past_audio = torch.zeros((self.audio_channels, self.overlap_len), device = device)
         hiddens = None
 
         @torch.inference_mode()
         def fn(audio_chunk: ndarray | Tensor):
+            assert audio_chunk.shape[-1] == self.overlap_len
+
             nonlocal hiddens
+            nonlocal past_audio
 
             is_numpy_input = isinstance(audio_chunk, ndarray)
 
             if is_numpy_input:
                 audio_chunk = torch.from_numpy(audio_chunk)
 
+            squeezed_audio_channel = audio_chunk.ndim == 1
+
+            if squeezed_audio_channel:
+                audio_chunk = rearrange(audio_chunk, '... -> 1 ...')
+
             if exists(device):
                 audio_chunk = audio_chunk.to(device)
 
-            audio_chunk = rearrange(audio_chunk, '... -> 1 ...')
+            # add past audio chunk
 
-            transformed, hiddens = self.forward(audio_chunk, hiddens = hiddens)
+            full_chunk = cat((past_audio, audio_chunk), dim = -1)
+
+            full_chunk = rearrange(full_chunk, '... -> 1 ...')
+
+            # forward chunk with past overlap through model
+
+            transformed, hiddens = self.forward(full_chunk, hiddens = hiddens)
 
             transformed = rearrange(transformed, '1 ... -> ...')
 
+            if squeezed_audio_channel:
+                transformer = rearrange(transformed, 't 1 ... -> t ...')
+
             if is_numpy_input:
                 transformed = transformed.cpu().numpy()
+
+            # save next overlap chunk for next timestep
+
+            past_audio = audio_chunk
 
             return transformed
 
@@ -183,7 +211,9 @@ class HSTasNet(Module):
         hiddens = None,
         targets = None
     ):
-        batch, device = audio.shape[0], audio.device
+        batch, audio_len, device = audio.shape[0], audio.shape[-1], audio.device
+
+        assert divisible_by(audio_len, self.segment_len)
 
         maybe_residual = residual if not self.small else identity
 
