@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, istft, hann_window, view_as_real, view_as_complex
 from torch.nn import LSTM, Module, ModuleList
 
+from numpy import ndarray
+
 from einx import add, multiply
 from einops import rearrange, pack, unpack
 from einops.layers.torch import Rearrange
@@ -69,7 +71,6 @@ class HSTasNet(Module):
         overlap_len = 512,
         n_fft = 1024,
         num_sources = 4,    # drums, bass, vocals, other
-        spec_encode_phase = False,
         torch_compile = False
     ):
         super().__init__()
@@ -138,6 +139,36 @@ class HSTasNet(Module):
 
         if torch_compile:
             self.forward = torch.compile(self.forward)
+
+    def init_stream_fn(self, device = None):
+        self.eval()
+
+        hiddens = None
+
+        @torch.inference_mode()
+        def fn(audio_chunk: ndarray | Tensor):
+            nonlocal hiddens
+
+            is_numpy_input = isinstance(audio_chunk, ndarray)
+
+            if is_numpy_input:
+                audio_chunk = torch.from_numpy(audio_chunk)
+
+            if exists(device):
+                audio_chunk = audio_chunk.to(device)
+
+            audio_chunk = rearrange(audio_chunk, '... -> 1 ...')
+
+            transformed, hiddens = self.forward(audio_chunk, hiddens = hiddens)
+
+            transformed = rearrange(transformed, '1 ... -> ...')
+
+            if is_numpy_input:
+                transformed = transformed.cpu().numpy()
+
+            return transformed
+
+        return fn
 
     @property
     def num_parameters(self):
@@ -243,7 +274,7 @@ class HSTasNet(Module):
 
         real_spec_per_source = multiply('b ..., b ... t -> (b t) ...', real_spec, spec_mask)
 
-        complex_spec_per_source = view_as_complex(real_spec_per_source)
+        complex_spec_per_source = view_as_complex(real_spec_per_source.contiguous())
 
         recon_audio_from_spec = istft(complex_spec_per_source, window = stft_window, **self.stft_kwargs, return_complex = False)
 

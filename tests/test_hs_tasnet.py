@@ -23,8 +23,13 @@ def test_model(
 
     # after much training
 
-    pred1, hiddens1 = model(audio)
-    pred2, hiddens1 = model(audio, hiddens = hiddens1)
+    chunk = torch.randn(shape)[..., :1024].numpy()
+
+    fn = model.init_stream_fn()
+
+    out1 = fn(chunk)
+    out2 = fn(chunk)
+    out3 = fn(chunk)
 
 def test_trainer():
     from hs_tasnet.hs_tasnet import HSTasNet
