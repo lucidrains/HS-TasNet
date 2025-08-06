@@ -47,6 +47,9 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
+def identity(t):
+    return t
+
 # residual
 
 def residual(fn):
@@ -182,6 +185,8 @@ class HSTasNet(Module):
     ):
         batch, device = audio.shape[0], audio.device
 
+        maybe_residual = residual if not self.small else identity
+
         if exists(targets):
             assert targets.shape == (batch, self.num_sources, *audio.shape[1:])
 
@@ -234,9 +239,9 @@ class HSTasNet(Module):
 
         spec_residual, waveform_residual = spec, waveform
 
-        spec, next_pre_spec_hidden = residual(self.pre_spec_branch)(spec, pre_spec_hidden)
+        spec, next_pre_spec_hidden = maybe_residual(self.pre_spec_branch)(spec, pre_spec_hidden)
 
-        waveform, next_pre_waveform_hidden = residual(self.pre_waveform_branch)(waveform, pre_waveform_hidden)
+        waveform, next_pre_waveform_hidden = maybe_residual(self.pre_waveform_branch)(waveform, pre_waveform_hidden)
 
         # if small, they just sum the two branches
 
@@ -247,7 +252,7 @@ class HSTasNet(Module):
 
         # fusing
 
-        fused, next_fusion_hidden = residual(self.fusion_branch)(fusion_input, fusion_hidden)
+        fused, next_fusion_hidden = maybe_residual(self.fusion_branch)(fusion_input, fusion_hidden)
 
         # split if not small, handle small next week
 
@@ -264,9 +269,9 @@ class HSTasNet(Module):
 
         # layer for both branches
 
-        spec, next_post_spec_hidden = residual(self.post_spec_branch)(spec, post_spec_hidden)
+        spec, next_post_spec_hidden = maybe_residual(self.post_spec_branch)(spec, post_spec_hidden)
 
-        waveform, next_post_waveform_hidden = residual(self.post_waveform_branch)(waveform, post_waveform_hidden)
+        waveform, next_post_waveform_hidden = maybe_residual(self.post_waveform_branch)(waveform, post_waveform_hidden)
 
         # spec mask
 
