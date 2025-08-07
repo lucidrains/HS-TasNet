@@ -5,13 +5,20 @@ import torch
 
 @param('small', (False, True))
 @param('stereo', (False, True))
+@param('use_gru', (False, True))
 def test_model(
     small,
-    stereo
+    stereo,
+    use_gru
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
 
-    model = HSTasNet(512, small = small, stereo = stereo)
+    model = HSTasNet(
+        512,
+        small = small,
+        stereo = stereo,
+        use_gru = use_gru
+    )
 
     shape = (2, 1024 * 12) if stereo else (1024 * 12,)
 

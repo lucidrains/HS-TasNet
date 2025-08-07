@@ -4,7 +4,7 @@ from functools import partial, wraps
 import torch
 import torch.nn.functional as F
 from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, istft, hann_window, view_as_real, view_as_complex
-from torch.nn import LSTM, Module, ModuleList
+from torch.nn import LSTM, GRU, Module, ModuleList
 
 from numpy import ndarray
 
@@ -24,6 +24,7 @@ from einops.layers.torch import Rearrange
 # constants
 
 LSTM = partial(LSTM, batch_first = True)
+GRU = partial(GRU, batch_first = True)
 
 # disable complex related functions from torch compile
 
@@ -153,7 +154,8 @@ class HSTasNet(Module):
         overlap_len = 512,
         n_fft = 1024,
         num_sources = 4,    # drums, bass, vocals, other
-        torch_compile = False
+        torch_compile = False,
+        use_gru = False
     ):
         super().__init__()
         audio_channels = 2 if stereo else 1
@@ -212,17 +214,19 @@ class HSTasNet(Module):
         self.small = small
         lstm_num_layers = 1 if small else 2
 
-        # lstms
+        # rnn
 
-        self.pre_spec_branch = LSTM(dim, dim, lstm_num_layers)
-        self.post_spec_branch = LSTM(dim, dim, lstm_num_layers)
+        rnn_klass = LSTM if not use_gru else GRU
+
+        self.pre_spec_branch = rnn_klass(dim, dim, lstm_num_layers)
+        self.post_spec_branch = rnn_klass(dim, dim, lstm_num_layers)
 
         dim_fusion = dim * (2 if not small else 1)
 
-        self.fusion_branch = LSTM(dim_fusion, dim_fusion, lstm_num_layers)
+        self.fusion_branch = rnn_klass(dim_fusion, dim_fusion, lstm_num_layers)
 
-        self.pre_waveform_branch = LSTM(dim, dim, lstm_num_layers)
-        self.post_waveform_branch = LSTM(dim, dim, lstm_num_layers)
+        self.pre_waveform_branch = rnn_klass(dim, dim, lstm_num_layers)
+        self.post_waveform_branch = rnn_klass(dim, dim, lstm_num_layers)
 
         # torch compile forward
 
