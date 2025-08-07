@@ -8,8 +8,8 @@ from torch.nn import LSTM, Module, ModuleList
 
 from numpy import ndarray
 
-from einx import add, multiply
-from einops import rearrange, pack, unpack
+from einx import add, multiply, divide
+from einops import rearrange, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
 # ein tensor notation:
@@ -28,13 +28,9 @@ LSTM = partial(LSTM, batch_first = True)
 # disable complex related functions from torch compile
 
 (
-    stft,
-    istft,
     view_as_real,
     view_as_complex
 ) = tuple(compiler.disable()(fn) for fn in (
-    stft,
-    istft,
     view_as_real,
     view_as_complex
 ))
@@ -64,6 +60,86 @@ def residual(fn):
 
     return decorated
 
+# fft related
+
+class STFT(Module):
+    """
+    need this custom module to address an issue with certain window and no centering in istft in pytorch - https://github.com/pytorch/pytorch/issues/91309
+    this solution was retailored from the working solution used at vocos https://github.com/gemelo-ai/vocos/blob/03c4fcbb321e4b04dd9b5091486eedabf1dc9de0/vocos/spectral_ops.py#L7
+    """
+
+    def __init__(
+        self,
+        n_fft,
+        hop_length,
+        win_length,
+        eps = 1e-11
+    ):
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+
+        window = torch.hann_window(win_length)
+        self.register_buffer('window', window)
+
+        self.eps = eps
+
+    @compiler.disable()
+    def inverse(self, spec):
+        n_fft, hop_length, win_length, window = self.n_fft, self.hop_length, self.win_length, self.window
+
+        batch, freqs, frames = spec.shape
+
+        # inverse FFT
+
+        ifft = torch.fft.irfft(spec, n_fft, dim = 1, norm = 'backward')
+
+        ifft = multiply('b w f, w', ifft, window)
+
+        # overlap and add
+
+        output_size = (frames - 1) * hop_length + win_length
+
+        y = F.fold(
+            ifft,
+            output_size = (1, output_size),
+            kernel_size = (1, win_length),
+            stride = (1, hop_length),
+        )[:, 0, 0]
+
+        # window envelope
+
+        window_sq = repeat(window.square(), 'w -> 1 w t', t = frames)
+
+        window_envelope = F.fold(
+            window_sq,
+            output_size = (1, output_size),
+            kernel_size = (1, win_length),
+            stride = (1, hop_length)
+        )
+
+        window_envelope = rearrange(window_envelope, '1 1 1 n -> n')
+
+        # normalize out
+
+        return divide('b n, n', y, window_envelope.clamp(min = self.eps))
+
+    @compiler.disable()
+    def forward(self, audio):
+
+        stft = torch.stft(
+            audio,
+            n_fft = self.n_fft,
+            win_length = self.win_length,
+            hop_length = self.hop_length,
+            center = False,
+            window = self.window,
+            return_complex = True
+        )
+
+        return stft
+
 # classes
 
 class HSTasNet(Module):
@@ -86,15 +162,19 @@ class HSTasNet(Module):
         self.num_sources = num_sources
 
         assert overlap_len < segment_len
+
         self.segment_len = segment_len
         self.overlap_len = overlap_len
 
+        assert divisible_by(segment_len, 2)
+        self.causal_pad = segment_len // 2
+
         # spec branch encoder stft hparams
 
-        self.stft_kwargs = dict(
+        self.stft = STFT(
             n_fft = n_fft,
             win_length = segment_len,
-            hop_length = overlap_len,
+            hop_length = overlap_len
         )
 
         spec_dim_input = (n_fft // 2 + 1) * 2 * audio_channels
@@ -113,7 +193,7 @@ class HSTasNet(Module):
 
         self.stereo = stereo
 
-        self.conv_encode = nn.Conv1d(audio_channels, num_basis * 2, segment_len, stride = overlap_len, padding = overlap_len)
+        self.conv_encode = nn.Conv1d(audio_channels, num_basis * 2, segment_len, stride = overlap_len)
 
         self.basis_to_embed = nn.Sequential(
             nn.Conv1d(num_basis, dim, 1),
@@ -125,7 +205,7 @@ class HSTasNet(Module):
             Rearrange('... (t basis) -> ... basis t', t = num_sources)
         )
 
-        self.conv_decode = nn.ConvTranspose1d(num_basis, audio_channels, segment_len, stride = overlap_len, padding = overlap_len)
+        self.conv_decode = nn.ConvTranspose1d(num_basis, audio_channels, segment_len, stride = overlap_len)
 
         # they do a single layer of lstm in their "small" variant
 
@@ -229,13 +309,17 @@ class HSTasNet(Module):
 
         assert not (self.stereo and audio.shape[1] != 2), 'audio channels must be 2 if training stereo'
 
+        # pad the audio manually on the left side for causal, and set stft center False
+
+        audio = F.pad(audio, (self.causal_pad, 0), value = 0.)
+
         # handle spec encoding
 
         spec_audio_input = rearrange(audio, 'b s ... -> (b s) ...')
 
         stft_window = hann_window(self.segment_len, device = device)
 
-        complex_spec = stft(spec_audio_input, window = stft_window, **self.stft_kwargs, return_complex = True)
+        complex_spec = self.stft(spec_audio_input)
 
         real_spec = view_as_real(complex_spec)
 
@@ -311,7 +395,7 @@ class HSTasNet(Module):
 
         complex_spec_per_source = view_as_complex(real_spec_per_source.contiguous())
 
-        recon_audio_from_spec = istft(complex_spec_per_source, window = stft_window, **self.stft_kwargs, return_complex = False)
+        recon_audio_from_spec = self.stft.inverse(complex_spec_per_source)
 
         recon_audio_from_spec = rearrange(recon_audio_from_spec, '(b s t) ... -> b t s ...', b = batch, s = self.audio_channels)
 
@@ -333,6 +417,10 @@ class HSTasNet(Module):
 
         if audio_is_squeezed:
             recon_audio = rearrange(recon_audio, 'b s 1 n -> b s n')
+
+        # excise out the causal padding
+
+        recon_audio = recon_audio[..., self.causal_pad:]
 
         if exists(targets):
             recon_loss = F.l1_loss(recon_audio, targets) # they claim a simple l1 loss is better than all the complicated stuff of past
