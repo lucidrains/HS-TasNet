@@ -332,8 +332,6 @@ class HSTasNet(Module):
 
         spec_audio_input = rearrange(audio, 'b s ... -> (b s) ...')
 
-        stft_window = hann_window(self.segment_len, device = device)
-
         complex_spec = self.stft(spec_audio_input)
 
         real_spec = view_as_real(complex_spec)
