@@ -32,11 +32,16 @@ def test_model(
 
     chunk = torch.randn(shape)[..., :512].numpy()
 
-    fn = model.init_stream_fn()
+    fn = model.init_stream_fn(
+        return_reduced_sources = [0, 2] # say we only want drum and vocals, filtering out the bass and other
+    )
 
     out1 = fn(chunk)
     out2 = fn(chunk)
     out3 = fn(chunk)
+
+    prec_shape = (2,) if stereo else ()
+    assert out3.shape == (*prec_shape, 512)
 
 @param('with_eval', (False, True))
 def test_trainer(

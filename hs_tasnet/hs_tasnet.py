@@ -10,7 +10,7 @@ from torch.nn import LSTM, GRU, Module, ModuleList
 from numpy import ndarray
 
 from einx import add, multiply, divide
-from einops import rearrange, repeat, pack, unpack
+from einops import rearrange, repeat, reduce, pack, unpack
 from einops.layers.torch import Rearrange
 
 # ein tensor notation:
@@ -234,7 +234,12 @@ class HSTasNet(Module):
         if torch_compile:
             self.forward = torch.compile(self.forward)
 
-    def init_stream_fn(self, device = None):
+    def init_stream_fn(
+        self,
+        device = None,
+        return_reduced_sources: list[int] | None = None,
+    ):
+        chunk_len = self.overlap_len
         self.eval()
 
         past_audio = torch.zeros((self.audio_channels, self.overlap_len), device = device)
@@ -242,7 +247,7 @@ class HSTasNet(Module):
 
         @torch.inference_mode()
         def fn(audio_chunk: ndarray | Tensor):
-            assert audio_chunk.shape[-1] == self.overlap_len
+            assert audio_chunk.shape[-1] == chunk_len
 
             nonlocal hiddens
             nonlocal past_audio
@@ -268,12 +273,12 @@ class HSTasNet(Module):
 
             # forward chunk with past overlap through model
 
-            transformed, hiddens = self.forward(full_chunk, hiddens = hiddens)
+            transformed, hiddens = self.forward(full_chunk, hiddens = hiddens, return_reduced_sources = return_reduced_sources)
 
             transformed = rearrange(transformed, '1 ... -> ...')
 
             if squeezed_audio_channel:
-                transformer = rearrange(transformed, 't 1 ... -> t ...')
+                transformed = rearrange(transformed, '... 1 n -> ... n')
 
             if is_numpy_input:
                 transformed = transformed.cpu().numpy()
@@ -282,7 +287,7 @@ class HSTasNet(Module):
 
             past_audio = audio_chunk
 
-            return transformed
+            return transformed[..., -chunk_len:]
 
         return fn
 
@@ -294,8 +299,12 @@ class HSTasNet(Module):
         self,
         audio,
         hiddens = None,
-        targets = None
+        targets = None,
+        return_reduced_sources: list[int] | None = None,
+        auto_causal_pad = None
     ):
+        auto_causal_pad = default(auto_causal_pad, self.training)
+
         batch, audio_len, device = audio.shape[0], audio.shape[-1], audio.device
 
         assert divisible_by(audio_len, self.segment_len)
@@ -316,7 +325,8 @@ class HSTasNet(Module):
 
         # pad the audio manually on the left side for causal, and set stft center False
 
-        audio = F.pad(audio, (self.causal_pad, 0), value = 0.)
+        if auto_causal_pad:
+            audio = F.pad(audio, (self.causal_pad, 0), value = 0.)
 
         # handle spec encoding
 
@@ -425,7 +435,8 @@ class HSTasNet(Module):
 
         # excise out the causal padding
 
-        recon_audio = recon_audio[..., self.causal_pad:]
+        if auto_causal_pad:
+            recon_audio = recon_audio[..., self.causal_pad:]
 
         if exists(targets):
             recon_loss = F.l1_loss(recon_audio, targets) # they claim a simple l1 loss is better than all the complicated stuff of past
@@ -440,5 +451,14 @@ class HSTasNet(Module):
             next_post_spec_hidden,
             next_post_waveform_hidden
         )
+
+        # take care of selecting out and reducing the sources if a list of source indices are passed in `return_reduced_sources`
+        # this is for eventual direct integration with e2e sounddevice audio callback streams
+
+        if exists(return_reduced_sources):
+            return_reduced_sources = tensor(return_reduced_sources, device = device)
+
+            sources = recon_audio.index_select(1, return_reduced_sources)
+            recon_audio = reduce(sources, 'b s ... -> b ...', 'sum')
 
         return recon_audio, lstm_hiddens

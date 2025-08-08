@@ -96,14 +96,14 @@ class Trainer(Module):
 
         past_eval_losses = [] # for early stopping detection
 
-        for _ in range(self.max_epochs):
+        for epoch in range(self.max_epochs):
 
             # training steps
 
             for audio, targets in self.dataloader:
                 loss = self.model(audio, targets = targets)
 
-                self.print(f'loss: {loss.item():.3f}')
+                self.print(f'[{epoch}] loss: {loss.item():.3f}')
 
                 self.accelerator.backward(loss)
 
@@ -112,6 +112,8 @@ class Trainer(Module):
 
             if not self.needs_eval:
                 continue
+
+            self.accelerator.wait_for_everyone()
 
             # evaluation at the end of each epoch
 
@@ -128,7 +130,7 @@ class Trainer(Module):
                 avg_eval_loss = stack(eval_losses).mean()
                 past_eval_losses.append(avg_eval_loss)
 
-            self.print(f'eval loss: {avg_eval_loss.item():.3f}')
+            self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
 
             # early stop if criteria met
 
@@ -138,5 +140,5 @@ class Trainer(Module):
                 len(last_n_eval_losses) > self.early_stop_steps and
                 (last_n_eval_losses[1:] >= last_n_eval_losses[:-1]).all() # losses have not improved
             ):
-                self.print(f'early stopping since last three eval losses have not improved: {last_n_eval_losses}')
+                self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses}')
                 break
