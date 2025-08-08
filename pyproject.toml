@@ -27,7 +27,9 @@ dependencies = [
     "accelerate",
     "einx>=0.3.0",
     "einops>=0.8.1",
+    "sounddevice",
     "torch>=2.4",
+    "torchaudio",
 ]
 
 [project.urls]
