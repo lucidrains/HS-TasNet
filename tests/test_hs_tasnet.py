@@ -38,7 +38,10 @@ def test_model(
     out2 = fn(chunk)
     out3 = fn(chunk)
 
-def test_trainer():
+@param('with_eval', (False, True))
+def test_trainer(
+    with_eval
+):
     from hs_tasnet.hs_tasnet import HSTasNet
     from hs_tasnet.trainer import Trainer
 
@@ -55,11 +58,21 @@ def test_trainer():
             targets = torch.rand(4, 1024 * 10)
             return audio, targets
 
+    class EvalMusicSepDataset(Dataset):
+        def __len__(self):
+            return 5
+
+        def __getitem__(self, idx):
+            audio = torch.randn(1024 * 10)
+            targets = torch.rand(4, 1024 * 10)
+            return audio, targets
+
     trainer = Trainer(
         model,
         dataset = MusicSepDataset(),
+        eval_dataset = EvalMusicSepDataset() if with_eval else None,
         batch_size = 4,
-        max_epochs = 1,
+        max_epochs = 3,
         cpu = True
     )
 
