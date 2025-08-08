@@ -3,7 +3,8 @@ from functools import partial, wraps
 
 import torch
 import torch.nn.functional as F
-from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, istft, hann_window, view_as_real, view_as_complex
+from torch.fft import irfft
+from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, hann_window, view_as_real, view_as_complex
 from torch.nn import LSTM, GRU, Module, ModuleList
 
 from numpy import ndarray
@@ -81,7 +82,7 @@ class STFT(Module):
         self.hop_length = hop_length
         self.win_length = win_length
 
-        window = torch.hann_window(win_length)
+        window = hann_window(win_length)
         self.register_buffer('window', window)
 
         self.eps = eps
@@ -94,7 +95,7 @@ class STFT(Module):
 
         # inverse FFT
 
-        ifft = torch.fft.irfft(spec, n_fft, dim = 1, norm = 'backward')
+        ifft = irfft(spec, n_fft, dim = 1, norm = 'backward')
 
         ifft = multiply('b w f, w', ifft, window)
 
