@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 
 import torch
 from torch import stack
@@ -15,6 +16,9 @@ from hs_tasnet.hs_tasnet import HSTasNet
 def exists(v):
     return v is not None
 
+def divisible_by(num, den):
+    return (num % den) == 0
+
 # classes
 
 class Trainer(Module):
@@ -30,6 +34,8 @@ class Trainer(Module):
         accelerate_kwargs: dict = dict(),
         optimizer_kwargs: dict = dict(),
         cpu = False,
+        checkpoint_every = 1,
+        checkpoint_folder = './checkpoints',
         early_stop_if_not_improved_steps = 3 # they do early stopping if 3 evals without improved loss
     ):
         super().__init__()
@@ -37,6 +43,13 @@ class Trainer(Module):
         # epochs
 
         self.max_epochs = max_epochs
+
+        # saving
+
+        self.checkpoint_every = checkpoint_every
+
+        self.checkpoint_folder = Path(checkpoint_folder)
+        self.checkpoint_folder.mkdir(parents = True, exist_ok = True)
 
         # optimizer
 
@@ -89,6 +102,10 @@ class Trainer(Module):
     def device(self):
         return self.accelerator.device
 
+    @property
+    def unwrapped_model(self):
+        return self.accelerator.unwrap_model(self.model)
+
     def print(self, *args):
         return self.accelerator.print(*args)
 
@@ -131,6 +148,17 @@ class Trainer(Module):
                 past_eval_losses.append(avg_eval_loss)
 
             self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
+
+            # maybe save
+
+            if (
+                divisible_by(epoch + 1, self.checkpoint_every) and
+                self.accelerator.is_main_process
+            ):
+                checkpoint_index = (epoch + 1) // self.checkpoint_every
+                self.unwrapped_model.save(self.checkpoint_folder / f'hs-tasnet.ckpt.{checkpoint_index}.pt')
+
+            self.accelerator.wait_for_everyone()
 
             # early stop if criteria met
 

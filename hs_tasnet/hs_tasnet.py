@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import pickle
+from pathlib import Path
 from functools import partial, wraps
 
 import torch
@@ -147,6 +150,7 @@ class STFT(Module):
 class HSTasNet(Module):
     def __init__(
         self,
+        *,
         dim = 500,          # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
         small = False,      # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
         stereo = False,
@@ -159,6 +163,16 @@ class HSTasNet(Module):
         use_gru = False
     ):
         super().__init__()
+
+        # auto-saving config
+
+        _locals = locals()
+        _locals.pop('self', None)
+        _locals.pop('__class__', None)
+        self._config = pickle.dumps(_locals)
+
+        # hyperparameters
+
         audio_channels = 2 if stereo else 1
 
         self.audio_channels = audio_channels
@@ -233,6 +247,43 @@ class HSTasNet(Module):
 
         if torch_compile:
             self.forward = torch.compile(self.forward)
+
+    # saving and loading
+
+    def save(self, path, overwrite = True):
+        path = Path(path)
+        assert overwrite or not path.exists()
+
+        pkg = dict(
+            model = self.state_dict(),
+            config = self._config,
+        )
+
+        torch.save(pkg, str(path))
+
+    def load(self, path, strict = True):
+        path = Path(path)
+        assert path.exists()
+
+        pkg = torch.load(str(path), map_location = 'cpu')
+
+        self.load_state_dict(pkg['model'], strict = strict)
+
+    @classmethod
+    def init_and_load_from(cls, path, strict = True):
+        path = Path(path)
+        assert path.exists()
+        pkg = torch.load(str(path), map_location = 'cpu')
+
+        assert 'config' in pkg, 'model configs were not found in this saved checkpoint'
+
+        config = pickle.loads(pkg['config'])
+        model = cls(**config)
+
+        self.load(model, path, strict = strict)
+        return model
+
+    # returns a function that closures the hiddens and past audio chunk for integration with sounddevice audio callback
 
     def init_stream_fn(
         self,

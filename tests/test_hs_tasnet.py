@@ -14,7 +14,7 @@ def test_model(
     from hs_tasnet.hs_tasnet import HSTasNet
 
     model = HSTasNet(
-        512,
+        dim = 512,
         small = small,
         stereo = stereo,
         use_gru = use_gru
@@ -78,6 +78,7 @@ def test_trainer(
         eval_dataset = EvalMusicSepDataset() if with_eval else None,
         batch_size = 4,
         max_epochs = 3,
+        checkpoint_every = 1,
         cpu = True
     )
 
