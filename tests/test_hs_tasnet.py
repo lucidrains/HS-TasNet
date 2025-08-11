@@ -32,7 +32,7 @@ def test_model(
 
     chunk = torch.randn(shape)[..., :512].numpy()
 
-    fn = model.init_stream_fn(
+    fn = model.init_stateful_transform_fn(
         return_reduced_sources = [0, 2] # say we only want drum and vocals, filtering out the bass and other
     )
 
@@ -83,3 +83,20 @@ def test_trainer(
     )
 
     trainer()
+
+def test_sounddevice():
+    from hs_tasnet.hs_tasnet import HSTasNet
+
+    model = HSTasNet(
+        dim = 512,
+        small = True,
+    )
+
+    model.save('./trained-model.pt')
+
+    model.load('./trained-model.pt')
+
+    model.sounddevice_stream(
+        duration_seconds = 2,           # transform the audio with this given neural network coming into the microphone for 2 seconds
+        return_reduced_sources = [0, 2] # say we only want drum and vocals, filtering out the bass and other
+    )

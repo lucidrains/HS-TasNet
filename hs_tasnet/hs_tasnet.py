@@ -4,6 +4,9 @@ import pickle
 from pathlib import Path
 from functools import partial, wraps
 
+import torchaudio
+import sounddevice as sd
+
 import torch
 import torch.nn.functional as F
 from torch.fft import irfft
@@ -285,7 +288,7 @@ class HSTasNet(Module):
 
     # returns a function that closures the hiddens and past audio chunk for integration with sounddevice audio callback
 
-    def init_stream_fn(
+    def init_stateful_transform_fn(
         self,
         device = None,
         return_reduced_sources: list[int] | None = None,
@@ -345,6 +348,47 @@ class HSTasNet(Module):
     @property
     def num_parameters(self):
         return sum([p.numel() for p in self.parameters()])
+
+    def sounddevice_stream(
+        self,
+        return_reduced_sources: list[int],
+        duration_seconds = 10,
+        channels = None,
+        device = None,
+        **stream_kwargs
+    ):
+        assert len(return_reduced_sources) > 0
+
+        transform_fn = self.init_stateful_transform_fn(
+            return_reduced_sources = return_reduced_sources,
+            device = device
+        )
+
+        # sounddevice stream callback, where raw audio can be transformed
+
+        def callback(indata, outdata, frames, time, status):
+            assert indata.shape[0] == self.overlap_len
+
+            indata = rearrange(indata, 'n c -> c n')
+
+            transformed = transform_fn(indata)
+
+            transformed = rearrange(transformed, 'c n -> n c')
+
+            outdata[:] = transformed
+
+        # variables
+
+        duration_ms = int(duration_seconds * 1000)
+
+        # sounddevice streaming
+
+        with sd.Stream(
+            **stream_kwargs,
+            channels = channels,
+            callback = callback
+        ):
+            sd.sleep(duration_ms)
 
     def forward(
         self,
