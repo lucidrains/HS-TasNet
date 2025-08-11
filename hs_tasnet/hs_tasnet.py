@@ -5,6 +5,7 @@ from pathlib import Path
 from functools import partial, wraps
 
 import torchaudio
+from torchaudio.functional import resample
 import sounddevice as sd
 
 import torch
@@ -154,14 +155,15 @@ class HSTasNet(Module):
     def __init__(
         self,
         *,
-        dim = 500,          # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
-        small = False,      # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
+        dim = 500,            # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
+        small = False,        # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
         stereo = False,
         num_basis = 1024,
         segment_len = 1024,
         overlap_len = 512,
         n_fft = 1024,
-        num_sources = 4,    # drums, bass, vocals, other
+        sample_rate = 44_100, # they use 41k sample rate
+        num_sources = 4,      # drums, bass, vocals, other
         torch_compile = False,
         use_gru = False
     ):
@@ -188,6 +190,10 @@ class HSTasNet(Module):
 
         assert divisible_by(segment_len, 2)
         self.causal_pad = segment_len // 2
+
+        # sample rate - 41k in paper
+
+        self.sample_rate = sample_rate
 
         # spec branch encoder stft hparams
 
@@ -250,6 +256,14 @@ class HSTasNet(Module):
 
         if torch_compile:
             self.forward = torch.compile(self.forward)
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+    @property
+    def num_parameters(self):
+        return sum([p.numel() for p in self.parameters()])
 
     # saving and loading
 
@@ -345,10 +359,6 @@ class HSTasNet(Module):
 
         return fn
 
-    @property
-    def num_parameters(self):
-        return sum([p.numel() for p in self.parameters()])
-
     def sounddevice_stream(
         self,
         return_reduced_sources: list[int],
@@ -386,9 +396,58 @@ class HSTasNet(Module):
         with sd.Stream(
             **stream_kwargs,
             channels = channels,
-            callback = callback
+            callback = callback,
+            samplerate = self.sample_rate
         ):
             sd.sleep(duration_ms)
+
+    def process_audio_file(
+        self,
+        input_file: str | Path,
+        return_reduced_sources: list[int],
+        output_file: str | Path | None = None,
+        overwrite = False
+    ):
+        if isinstance(input_file, str):
+            input_file = Path(input_file)
+
+        assert len(return_reduced_sources) > 0
+        assert input_file.exists(), f'{str(input_file)} not found'
+
+        audio_tensor, sample_rate = torchaudio.load(input_file)
+
+        # resample if need be
+
+        if sample_rate != self.sample_rate:
+            audio_tensor = resample(audio_tensor, sample_rate, self.sample_rate)
+
+        # curtail to divisible segment lens
+
+        audio_len = audio_tensor.shape[-1]
+        rounded_down_len = audio_len // self.segment_len * self.segment_len
+
+        audio_tensor = audio_tensor[..., :rounded_down_len]
+
+        # transform
+
+        audio_tensor = audio_tensor.to(self.device)
+
+        with torch.no_grad():
+            self.eval()
+            transformed = self.forward(audio_tensor, return_reduced_sources = return_reduced_sources)
+
+        # save output file
+
+        if not exists(output_file):
+            output_file = Path(input_file.parents[-2] / f'{input_file.stem}-out.mp3')
+
+        assert output_file != input_file
+
+        assert not output_file.exists() or overwrite, f'{str(output_file)} already exists, set `overwrite = True` if you wish to overwrite'
+
+        torchaudio.save(str(output_file), audio_tensor.cpu(), sample_rate = self.sample_rate)
+
+        print(f'separated audio saved to {str(output_file)}')
 
     def forward(
         self,

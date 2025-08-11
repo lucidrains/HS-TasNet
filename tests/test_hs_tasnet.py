@@ -84,7 +84,7 @@ def test_trainer(
 
     trainer()
 
-def test_sounddevice():
+def test_audio_processing():
     from hs_tasnet.hs_tasnet import HSTasNet
 
     model = HSTasNet(
@@ -100,3 +100,5 @@ def test_sounddevice():
         duration_seconds = 2,           # transform the audio with this given neural network coming into the microphone for 2 seconds
         return_reduced_sources = [0, 2] # say we only want drum and vocals, filtering out the bass and other
     )
+
+    model.process_audio_file('./tests/test.mp3', [0, 2], overwrite = True)
