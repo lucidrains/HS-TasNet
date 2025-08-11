@@ -545,9 +545,6 @@ class HSTasNet(Module):
             next_post_waveform_hidden
         )
 
-        # take care of selecting out and reducing the sources if a list of source indices are passed in `return_reduced_sources`
-        # this is for eventual direct integration with e2e sounddevice audio callback streams
-
         if exists(return_reduced_sources):
             return_reduced_sources = tensor(return_reduced_sources, device = device)
 
