@@ -18,8 +18,7 @@ jobs:
         python -m pip install -e .[test]
     - name: Install audio packages
       run: |
-        sudo apt-get install libportaudio2
-        sudo apt-get install libasound-dev
+        brew install portaudio
     - name: Test with pytest
       run: |
         python -m pytest tests/
