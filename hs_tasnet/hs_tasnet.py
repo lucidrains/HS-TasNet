@@ -576,7 +576,13 @@ class HSTasNet(Module):
 
         spec_mask = self.to_spec_mask(spec).softmax(dim = -1)
 
-        complex_spec_per_source = multiply('b ..., b ... t -> (b t) ...', complex_spec, spec_mask)
+        magnitude, phase = complex_spec.abs(), complex_spec.angle()
+
+        scaled_magnitude = multiply('b ..., b ... t -> (b t) ...', magnitude, spec_mask)
+
+        phase = repeat(phase, 'b ... -> (b t) ...', t = self.num_sources)
+
+        complex_spec_per_source = torch.polar(scaled_magnitude, phase)
 
         recon_audio_from_spec = self.stft.inverse(complex_spec_per_source)
 
