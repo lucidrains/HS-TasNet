@@ -5,6 +5,7 @@ import torch
 from torch import stack
 from torch.nn import Module
 from torch.optim import Adam
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Dataset, DataLoader
 
 from accelerate import Accelerator
@@ -18,6 +19,14 @@ def exists(v):
 
 def divisible_by(num, den):
     return (num % den) == 0
+
+def not_improved_last_n_steps(losses, steps):
+    if len(losses) <= steps:
+        return False
+
+    last_n_losses = losses[-(steps + 1):]
+
+    return (last_n_losses[1:] <= last_n_losses[:-1]).all().item()
 
 # classes
 
@@ -36,7 +45,9 @@ class Trainer(Module):
         cpu = False,
         checkpoint_every = 1,
         checkpoint_folder = './checkpoints',
-        early_stop_if_not_improved_steps = 10 # they do early stopping if 10 evals without improved loss
+        decay_lr_factor = 0.5,
+        decay_lr_if_not_improved_steps = 3,    # decay learning rate if validation loss does not improve for this amount of epochs
+        early_stop_if_not_improved_steps = 10, # they do early stopping if 10 evals without improved loss
     ):
         super().__init__()
 
@@ -74,21 +85,32 @@ class Trainer(Module):
             **accelerate_kwargs
         )
 
+        # decay lr logic
+
+        scheduler = StepLR(optimizer, 1, gamma = decay_lr_factor)
+
+        self.decay_lr_if_not_improved_steps = decay_lr_if_not_improved_steps
+
         # preparing
 
         (
             self.model,
             self.optimizer,
+            self.scheduler,
             self.dataloader
         ) = self.accelerator.prepare(
             model,
             optimizer,
+            scheduler,
             dataloader
         )
 
         # has eval
 
         self.needs_eval = exists(eval_dataloader)
+
+
+        # early stopping
 
         assert early_stop_if_not_improved_steps >= 2
         self.early_stop_steps = early_stop_if_not_improved_steps
@@ -111,7 +133,7 @@ class Trainer(Module):
 
     def forward(self):
 
-        past_eval_losses = [] # for early stopping detection
+        past_eval_losses = [] # for learning rate decay and early stopping detection
 
         for epoch in range(self.max_epochs):
 
@@ -160,13 +182,17 @@ class Trainer(Module):
 
             self.accelerator.wait_for_everyone()
 
-            # early stop if criteria met
+            # stack validation losses for all epochs
 
             last_n_eval_losses = stack(past_eval_losses[-self.early_stop_steps:])
 
-            if (
-                len(last_n_eval_losses) > self.early_stop_steps and
-                (last_n_eval_losses[1:] >= last_n_eval_losses[:-1]).all() # losses have not improved
-            ):
+            # decay lr if criteria met
+
+            if not_improved_last_n_steps(last_n_eval_losses, self.decay_lr_if_not_improved_steps):
+                self.scheduler.step()
+
+            # early stop if criteria met
+
+            if not_improved_last_n_steps(last_n_eval_losses, self.early_stop_steps):
                 self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses}')
                 break
