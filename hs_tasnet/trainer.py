@@ -194,7 +194,7 @@ class Trainer(Module):
 
             # stack validation losses for all epochs
 
-            last_n_eval_losses = stack(past_eval_losses[-self.early_stop_steps:])
+            last_n_eval_losses = stack(past_eval_losses)
 
             # decay lr if criteria met
 
