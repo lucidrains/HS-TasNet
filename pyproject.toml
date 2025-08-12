@@ -38,7 +38,9 @@ Homepage = "https://pypi.org/project/hs-tasnet/"
 Repository = "https://github.com/lucidrains/hs-tasnet"
 
 [project.optional-dependencies]
-examples = []
+examples = [
+    "musdb"
+]
 test = [
     "pytest"
 ]
