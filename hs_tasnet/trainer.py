@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import torch
-from torch import stack
+from torch import stack, tensor
 from torch.nn import Module
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
@@ -109,7 +109,6 @@ class Trainer(Module):
 
         self.needs_eval = exists(eval_dataloader)
 
-
         # early stopping
 
         assert early_stop_if_not_improved_steps >= 2
@@ -119,6 +118,10 @@ class Trainer(Module):
 
         if self.needs_eval:
             self.eval_dataloader = self.accelerator.prepare(eval_dataloader)
+
+        # step
+
+        self.register_buffer('step', tensor(0))
 
     @property
     def device(self):
@@ -130,6 +133,9 @@ class Trainer(Module):
 
     def print(self, *args):
         return self.accelerator.print(*args)
+
+    def log(self, **data):
+        return self.accelerator.log(data, step = self.step.item())
 
     def forward(self):
 
@@ -143,6 +149,8 @@ class Trainer(Module):
                 loss = self.model(audio, targets = targets)
 
                 self.print(f'[{epoch}] loss: {loss.item():.3f}')
+
+                self.log(loss = loss)
 
                 self.accelerator.backward(loss)
 
@@ -171,6 +179,8 @@ class Trainer(Module):
 
             self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
 
+            self.log(loss = avg_eval_loss)
+
             # maybe save
 
             if (
@@ -196,3 +206,5 @@ class Trainer(Module):
             if not_improved_last_n_steps(last_n_eval_losses, self.early_stop_steps):
                 self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses}')
                 break
+
+            self.step.add_(1)
