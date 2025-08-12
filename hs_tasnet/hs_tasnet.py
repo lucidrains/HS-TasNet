@@ -186,7 +186,7 @@ class HSTasNet(Module):
         dim = 500,            # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
         small = False,        # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
         stereo = False,
-        num_basis = 1024,
+        num_basis = 1500,
         segment_len = 1024,
         overlap_len = 512,
         n_fft = 1024,
