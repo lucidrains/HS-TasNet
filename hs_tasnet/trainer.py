@@ -36,7 +36,7 @@ class Trainer(Module):
         cpu = False,
         checkpoint_every = 1,
         checkpoint_folder = './checkpoints',
-        early_stop_if_not_improved_steps = 3 # they do early stopping if 3 evals without improved loss
+        early_stop_if_not_improved_steps = 10 # they do early stopping if 10 evals without improved loss
     ):
         super().__init__()
 

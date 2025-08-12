@@ -6,13 +6,14 @@ from functools import partial, wraps
 
 import torchaudio
 from torchaudio.functional import resample
+
 import sounddevice as sd
 
 import torch
 import torch.nn.functional as F
 from torch.fft import irfft
 from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, hann_window, view_as_real, view_as_complex
-from torch.nn import LSTM, GRU, Module, ModuleList
+from torch.nn import LSTM, GRU, ConvTranspose1d, Module, ModuleList
 
 from numpy import ndarray
 
@@ -149,6 +150,33 @@ class STFT(Module):
 
         return stft
 
+# Tasnet applies a hann window to the convtranspose1d
+
+class ConvTranspose1DWithHannWindow(ConvTranspose1d):
+    def __init__(
+        self,
+        dim,
+        dim_out,
+        filters,
+        **kwargs
+    ):
+        super().__init__(dim, dim_out, filters, **kwargs)
+
+        self.register_buffer('window', hann_window(filters))
+
+    def forward(self, x):
+
+        filters = self.weight
+
+        windowed_filters = multiply('o i k, k', filters, self.window)
+
+        return F.conv_transpose1d(
+            x,
+            windowed_filters,
+            stride = self.stride,
+            padding = self.padding
+        )
+
 # classes
 
 class HSTasNet(Module):
@@ -231,7 +259,7 @@ class HSTasNet(Module):
             Rearrange('... (t basis) -> ... basis t', t = num_sources)
         )
 
-        self.conv_decode = nn.ConvTranspose1d(num_basis, audio_channels, segment_len, stride = overlap_len)
+        self.conv_decode = ConvTranspose1DWithHannWindow(num_basis, audio_channels, segment_len, stride = overlap_len)
 
         # they do a single layer of lstm in their "small" variant
 
