@@ -19,11 +19,11 @@ from hs_tasnet.hs_tasnet import HSTasNet
 
 model = HSTasNet()
 
-print(model.num_parameters) # 42979105 ~ 41M in paper
+print(model.num_parameters) # 41694553 ~ 41M in paper
 
 small_model = HSTasNet(small = True)
 
-print(small_model.num_parameters) # 20951105 ~ 16M in paper
+print(small_model.num_parameters) # 19666553 ~ 16M in paper
 ```
 
 ## Sponsors

@@ -12,7 +12,7 @@ import sounddevice as sd
 import torch
 import torch.nn.functional as F
 from torch.fft import irfft
-from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, hann_window, view_as_real, view_as_complex
+from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, hann_window
 from torch.nn import LSTM, GRU, ConvTranspose1d, Module, ModuleList
 
 from numpy import ndarray
@@ -34,16 +34,6 @@ from einops.layers.torch import Rearrange
 
 LSTM = partial(LSTM, batch_first = True)
 GRU = partial(GRU, batch_first = True)
-
-# disable complex related functions from torch compile
-
-(
-    view_as_real,
-    view_as_complex
-) = tuple(compiler.disable()(fn) for fn in (
-    view_as_real,
-    view_as_complex
-))
 
 # functions
 
@@ -231,7 +221,7 @@ class HSTasNet(Module):
             hop_length = overlap_len
         )
 
-        spec_dim_input = (n_fft // 2 + 1) * 2 * audio_channels
+        spec_dim_input = (n_fft // 2 + 1) * audio_channels
 
         self.spec_encode = nn.Sequential(
             Rearrange('(b s) f n ... -> b n (s f ...)', s = audio_channels),
@@ -240,7 +230,7 @@ class HSTasNet(Module):
 
         self.to_spec_mask = nn.Sequential(
             nn.Linear(dim, spec_dim_input * num_sources),
-            Rearrange('b n (s f c t) -> (b s) f n c t', c = 2, s = audio_channels, t = num_sources)
+            Rearrange('b n (s f t) -> (b s) f n t', s = audio_channels, t = num_sources)
         )
 
         # waveform branch encoder
@@ -516,9 +506,9 @@ class HSTasNet(Module):
 
         complex_spec = self.stft(spec_audio_input)
 
-        real_spec = view_as_real(complex_spec)
+        magnitude = complex_spec.abs()
 
-        spec = self.spec_encode(real_spec)
+        spec = self.spec_encode(magnitude)
 
         # handle encoding as detailed in original tasnet
         # to keep non-negative, they do a glu with relu on main branch
@@ -586,9 +576,7 @@ class HSTasNet(Module):
 
         spec_mask = self.to_spec_mask(spec).softmax(dim = -1)
 
-        real_spec_per_source = multiply('b ..., b ... t -> (b t) ...', real_spec, spec_mask)
-
-        complex_spec_per_source = view_as_complex(real_spec_per_source.contiguous())
+        complex_spec_per_source = multiply('b ..., b ... t -> (b t) ...', complex_spec, spec_mask)
 
         recon_audio_from_spec = self.stft.inverse(complex_spec_per_source)
 
