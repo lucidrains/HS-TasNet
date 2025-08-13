@@ -18,7 +18,7 @@ jobs:
         python -m pip install -e .[test]
     - name: Install audio packages
       run: |
-        brew install portaudio
+        brew install portaudio ffmpeg
     - name: Test with pytest
       run: |
         python -m pytest tests/
