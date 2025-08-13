@@ -198,9 +198,12 @@ class Trainer(Module):
 
     def forward(self):
 
+        exceeds_max_step = False
         past_eval_losses = [] # for learning rate decay and early stopping detection
 
         for epoch in range(self.max_epochs):
+
+            self.model.train()
 
             # training steps
 
@@ -215,6 +218,15 @@ class Trainer(Module):
 
                 self.optimizer.step()
                 self.optimizer.zero_grad()
+
+                # max steps
+
+                self.step.add_(1)
+
+                exceeds_max_step = exists(self.max_steps) and self.step.item() >= self.max_steps
+
+                if exceeds_max_step:
+                    break
 
             # update ema
 
@@ -280,13 +292,7 @@ class Trainer(Module):
                     self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses}')
                     break
 
-            # increment step
-
-            self.step.add_(1)
-
-            # max steps
-
-            if self.step.item() >= self.max_steps:
+            if exceeds_max_step:
                 break
 
         self.print(f'training complete')
