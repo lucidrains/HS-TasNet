@@ -228,7 +228,7 @@ class HSTasNet(Module):
             nn.Linear(spec_dim_input, dim)
         )
 
-        self.to_spec_mask = nn.Sequential(
+        self.to_spec_masks = nn.Sequential(
             nn.Linear(dim, spec_dim_input * num_sources),
             Rearrange('b n (s f t) -> (b s) f n t', s = audio_channels, t = num_sources)
         )
@@ -245,11 +245,19 @@ class HSTasNet(Module):
         )
 
         self.to_waveform_masks = nn.Sequential(
-            nn.Linear(dim, num_sources * num_basis, bias = False),
+            nn.Linear(dim, num_sources * num_basis),
             Rearrange('... (t basis) -> ... basis t', t = num_sources)
         )
 
         self.conv_decode = ConvTranspose1DWithHannWindow(num_basis, audio_channels, segment_len, stride = overlap_len)
+
+        # init mask to identity
+
+        nn.init.zeros_(self.to_spec_masks[0].weight)
+        nn.init.constant_(self.to_spec_masks[0].bias, 1.)
+
+        nn.init.zeros_(self.to_waveform_masks[0].weight)
+        nn.init.constant_(self.to_waveform_masks[0].bias, 1.)
 
         # they do a single layer of lstm in their "small" variant
 
@@ -574,7 +582,7 @@ class HSTasNet(Module):
 
         # spec mask
 
-        spec_mask = self.to_spec_mask(spec).softmax(dim = -1)
+        spec_mask = self.to_spec_masks(spec)
 
         magnitude, phase = complex_spec.abs(), complex_spec.angle()
 
@@ -590,7 +598,7 @@ class HSTasNet(Module):
 
         # waveform mask
 
-        waveform_mask = self.to_waveform_masks(waveform).softmax(dim = -1)
+        waveform_mask = self.to_waveform_masks(waveform)
 
         basis_per_source = multiply('b basis n, b n basis t -> (b t) basis n', basis, waveform_mask)
 
