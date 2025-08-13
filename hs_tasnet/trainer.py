@@ -12,6 +12,8 @@ from accelerate import Accelerator
 
 from hs_tasnet.hs_tasnet import HSTasNet
 
+from ema_pytorch import EMA
+
 # functions
 
 def exists(v):
@@ -43,6 +45,9 @@ class Trainer(Module):
         accelerate_kwargs: dict = dict(),
         optimizer_kwargs: dict = dict(),
         cpu = False,
+        use_ema = True,
+        ema_decay = 0.995,
+        ema_kwargs: dict = dict(),
         checkpoint_every = 1,
         checkpoint_folder = './checkpoints',
         decay_lr_factor = 0.5,
@@ -91,6 +96,13 @@ class Trainer(Module):
 
         self.decay_lr_if_not_improved_steps = decay_lr_if_not_improved_steps
 
+        # setup ema on main process
+
+        self.use_ema = use_ema
+
+        if use_ema:
+            self.ema_model = EMA(model, beta = ema_decay, **ema_kwargs)
+
         # preparing
 
         (
@@ -131,6 +143,13 @@ class Trainer(Module):
     def unwrapped_model(self):
         return self.accelerator.unwrap_model(self.model)
 
+    @property
+    def is_main(self):
+        return self.accelerator.is_main_process
+
+    def wait(self):
+        return self.accelerator.wait_for_everyone()
+
     def print(self, *args):
         return self.accelerator.print(*args)
 
@@ -157,54 +176,70 @@ class Trainer(Module):
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            if not self.needs_eval:
-                continue
+            # update ema
 
-            self.accelerator.wait_for_everyone()
+            self.wait()
 
-            # evaluation at the end of each epoch
+            if self.use_ema and self.is_main:
+                self.ema_model.update()
 
-            eval_losses = []
+            # maybe eval
 
-            for eval_audio, eval_targets in self.eval_dataloader:
+            self.wait()
 
-                self.model.eval()
+            if self.needs_eval:
 
-                with torch.no_grad():
-                    eval_loss = self.model(audio, targets = targets)
-                    eval_losses.append(eval_loss)
+                # evaluation at the end of each epoch
 
-                avg_eval_loss = stack(eval_losses).mean()
-                past_eval_losses.append(avg_eval_loss)
+                eval_losses = []
 
-            self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
+                for eval_audio, eval_targets in self.eval_dataloader:
 
-            self.log(loss = avg_eval_loss)
+                    self.model.eval()
+
+                    with torch.no_grad():
+                        eval_loss = self.model(audio, targets = targets)
+                        eval_losses.append(eval_loss)
+
+                    avg_eval_loss = stack(eval_losses).mean()
+                    past_eval_losses.append(avg_eval_loss)
+
+                self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
+
+                self.log(loss = avg_eval_loss)
 
             # maybe save
 
+            self.wait()
+
             if (
                 divisible_by(epoch + 1, self.checkpoint_every) and
-                self.accelerator.is_main_process
+                self.is_main
             ):
                 checkpoint_index = (epoch + 1) // self.checkpoint_every
                 self.unwrapped_model.save(self.checkpoint_folder / f'hs-tasnet.ckpt.{checkpoint_index}.pt')
 
-            self.accelerator.wait_for_everyone()
+                if self.use_ema:
+                    self.ema_model.ema_model.save(self.checkpoint_folder /f'hs_tasnet.ema.ckpt.{checkpoint_index}.pt') # save ema
 
-            # stack validation losses for all epochs
+            # determine lr decay and early stopping based on eval
 
-            last_n_eval_losses = stack(past_eval_losses)
+            if self.needs_eval:
+                # stack validation losses for all epochs
 
-            # decay lr if criteria met
+                last_n_eval_losses = stack(past_eval_losses)
 
-            if not_improved_last_n_steps(last_n_eval_losses, self.decay_lr_if_not_improved_steps):
-                self.scheduler.step()
+                # decay lr if criteria met
 
-            # early stop if criteria met
+                if not_improved_last_n_steps(last_n_eval_losses, self.decay_lr_if_not_improved_steps):
+                    self.scheduler.step()
 
-            if not_improved_last_n_steps(last_n_eval_losses, self.early_stop_steps):
-                self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses}')
-                break
+                # early stop if criteria met
+
+                if not_improved_last_n_steps(last_n_eval_losses, self.early_stop_steps):
+                    self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses}')
+                    break
+
+            # increment step
 
             self.step.add_(1)

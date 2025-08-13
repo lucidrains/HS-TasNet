@@ -44,8 +44,10 @@ def test_model(
     assert out3.shape == (*prec_shape, 512)
 
 @param('with_eval', (False, True))
+@param('with_ema', (False, True))
 def test_trainer(
-    with_eval
+    with_eval,
+    with_ema
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
     from hs_tasnet.trainer import Trainer
@@ -79,7 +81,8 @@ def test_trainer(
         batch_size = 4,
         max_epochs = 3,
         checkpoint_every = 1,
-        cpu = True
+        cpu = True,
+        use_ema = with_ema
     )
 
     trainer()
