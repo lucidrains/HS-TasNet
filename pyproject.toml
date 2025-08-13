@@ -1,6 +1,6 @@
 [project]
 name = "HS-TasNet"
-version = "0.0.25"
+version = "0.1.0"
 description = "HS TasNet"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -28,6 +28,7 @@ dependencies = [
     "einx>=0.3.0",
     "einops>=0.8.1",
     "ema-pytorch",
+    "musdb",
     "sounddevice",
     "soundfile",
     "torch>=2.4",
@@ -40,7 +41,6 @@ Repository = "https://github.com/lucidrains/hs-tasnet"
 
 [project.optional-dependencies]
 examples = [
-    "musdb",
     "wandb"
 ]
 test = [

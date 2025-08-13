@@ -8,11 +8,17 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Dataset, DataLoader
 
+import numpy as np
+
 from accelerate import Accelerator
 
 from hs_tasnet.hs_tasnet import HSTasNet
 
 from ema_pytorch import EMA
+
+from einops import rearrange
+
+from musdb import DB as MusDB
 
 # functions
 
@@ -30,18 +36,44 @@ def not_improved_last_n_steps(losses, steps):
 
     return (last_n_losses[1:] <= last_n_losses[:-1]).all().item()
 
+# wrap the musdb MultiTrack if detected
+
+class MusDBDataset(Dataset):
+    def __init__(
+        self,
+        musdb_data: MultiTrack
+    ):
+        self.musdb_data = musdb_data
+
+    def __len__(self):
+        return len(self.musdb_data)
+
+    def __getitem__(self, idx):
+        sample = self.musdb_data[idx]
+
+        audio = rearrange(sample.audio, 'n s -> s n')
+
+        targets = rearrange(sample.stems[1:], 't n s -> t s n') # the first one is the entire mixture
+
+        audio = audio.astype(np.float32)
+
+        targets = targets.astype(np.float32)
+
+        return audio, targets
+
 # classes
 
 class Trainer(Module):
     def __init__(
         self,
         model: HSTasNet,
-        dataset: Dataset,
+        dataset: Dataset | MusDB,
         eval_dataset: Dataset | None = None,
         optim_klass = Adam,
         batch_size = 128,
         learning_rate = 3e-4,
         max_epochs = 10,
+        max_steps = None,
         accelerate_kwargs: dict = dict(),
         optimizer_kwargs: dict = dict(),
         cpu = False,
@@ -60,6 +92,8 @@ class Trainer(Module):
 
         self.max_epochs = max_epochs
 
+        self.max_steps = max_steps
+
         # saving
 
         self.checkpoint_every = checkpoint_every
@@ -75,7 +109,13 @@ class Trainer(Module):
             **optimizer_kwargs
         )
 
-        # data
+        # dataset
+
+        if isinstance(dataset, MusDB):
+            # give musdb special treatment
+            dataset = MusDBDataset(dataset)
+
+        # dataloader
 
         dataloader = DataLoader(dataset, batch_size = batch_size, drop_last = True, shuffle = True)
 
@@ -243,3 +283,10 @@ class Trainer(Module):
             # increment step
 
             self.step.add_(1)
+
+            # max steps
+
+            if self.step.item() >= self.max_steps:
+                break
+
+        self.print(f'training complete')
