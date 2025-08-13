@@ -293,6 +293,21 @@ class HSTasNet(Module):
 
     # saving and loading
 
+    def save_tensor_to_file(
+        self,
+        output_file: str | Path,
+        audio_tensor: Tensor,
+        overwrite = False
+    ):
+        if isinstance(output_file, str):
+            output_file = Path(output_file)
+
+        assert not exists(output_file) or overwrite, f'{str(output_file)} already exists, set `overwrite = True` if you wish to overwrite'
+
+        torchaudio.save(str(output_file), audio_tensor.cpu(), sample_rate = self.sample_rate)
+
+        print(f'audio saved to {str(output_file)}')
+
     def save(self, path, overwrite = True):
         path = Path(path)
         assert overwrite or not path.exists()
@@ -469,11 +484,7 @@ class HSTasNet(Module):
 
         assert output_file != input_file
 
-        assert not output_file.exists() or overwrite, f'{str(output_file)} already exists, set `overwrite = True` if you wish to overwrite'
-
-        torchaudio.save(str(output_file), audio_tensor.cpu(), sample_rate = self.sample_rate)
-
-        print(f'separated audio saved to {str(output_file)}')
+        self.save_tensor_to_file(str(output_file), audio_tensor.cpu(), overwrite = overwrite)
 
     def forward(
         self,
