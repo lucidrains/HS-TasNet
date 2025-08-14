@@ -20,7 +20,7 @@ def test_model(
         use_gru = use_gru
     )
 
-    shape = (2, 1024 * 12) if stereo else (1024 * 12,)
+    shape = (2, 1017 * 12) if stereo else (1017 * 12,)
 
     audio = torch.randn(3, *shape)
     targets = torch.rand(3, 4, *shape)

@@ -503,20 +503,26 @@ class HSTasNet(Module):
     ):
         auto_causal_pad = default(auto_causal_pad, self.training)
 
-        batch, audio_len, device = audio.shape[0], audio.shape[-1], audio.device
-
         assert auto_curtail_length_to_multiple or divisible_by(audio_len, self.segment_len)
 
         # take care of audio being passed in that isn't multiple of segment length
 
         if auto_curtail_length_to_multiple:
-            round_down_audio_len = round_down_to_multiple(audio_len, self.segment_len)
+            round_down_audio_len = round_down_to_multiple(audio.shape[-1], self.segment_len)
             audio = audio[..., :round_down_audio_len]
 
             if exists(targets):
                 targets = targets[..., :round_down_audio_len]
 
-        assert not is_empty(audio)
+        # variables
+
+        batch, audio_len, device = audio.shape[0], audio.shape[-1], audio.device
+
+        # validate lengths
+
+        assert not exists(targets) or audio.shape[-1] == targets.shape[-1]
+
+        assert not is_empty(audio), f'audio is empty, probably insufficient lengthed audio given segment length and auto-rounding down the length'
 
         # their small version probably does not need a skip connection
 
