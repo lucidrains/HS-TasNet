@@ -49,6 +49,12 @@ def divisible_by(num, den):
 def identity(t):
     return t
 
+def is_empty(t: Tensor):
+    return t.numel() == 0
+
+def round_down_to_multiple(num, mult):
+    return (num // mult) * mult
+
 # residual
 
 def residual(fn):
@@ -465,7 +471,7 @@ class HSTasNet(Module):
         # curtail to divisible segment lens
 
         audio_len = audio_tensor.shape[-1]
-        rounded_down_len = audio_len // self.segment_len * self.segment_len
+        rounded_down_len = round_down_to_multiple(audio_len, self.segment_len)
 
         audio_tensor = audio_tensor[..., :rounded_down_len]
 
@@ -492,13 +498,27 @@ class HSTasNet(Module):
         hiddens = None,
         targets = None,
         return_reduced_sources: list[int] | None = None,
-        auto_causal_pad = None
+        auto_causal_pad = None,
+        auto_curtail_length_to_multiple = True
     ):
         auto_causal_pad = default(auto_causal_pad, self.training)
 
         batch, audio_len, device = audio.shape[0], audio.shape[-1], audio.device
 
-        assert divisible_by(audio_len, self.segment_len)
+        assert auto_curtail_length_to_multiple or divisible_by(audio_len, self.segment_len)
+
+        # take care of audio being passed in that isn't multiple of segment length
+
+        if auto_curtail_length_to_multiple:
+            round_down_audio_len = round_down_to_multiple(audio_len, self.segment_len)
+            audio = audio[..., :round_down_audio_len]
+
+            if exists(targets):
+                targets = targets[..., :round_down_audio_len]
+
+        assert not is_empty(audio)
+
+        # their small version probably does not need a skip connection
 
         maybe_residual = residual if not self.small else identity
 
