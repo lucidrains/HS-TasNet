@@ -13,17 +13,39 @@ $ pip install HS-TasNet
 ## Usage
 
 ```python
-import torch
+# model
 
-from hs_tasnet.hs_tasnet import HSTasNet
+from hs_tasnet import HSTasNet
 
 model = HSTasNet()
 
-print(model.num_parameters) # 41694553 ~ 41M in paper
+# the musdb dataset
 
-small_model = HSTasNet(small = True)
+import musdb
+mus = musdb.DB(download = True)
 
-print(small_model.num_parameters) # 19666553 ~ 16M in paper
+# trainer
+
+from hs_tasnet import Trainer
+
+trainer = Trainer(
+    model,
+    dataset = mus,
+    batch_size = 2,
+    max_steps = 2,
+    cpu = True,
+)
+
+trainer()
+
+# after much training
+# inferencing
+
+model.sounddevice_stream(
+    duration_seconds = 2,
+    return_reduced_sources = [0, 2]
+)
+
 ```
 
 ## Sponsors

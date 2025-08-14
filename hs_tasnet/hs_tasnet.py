@@ -181,7 +181,7 @@ class HSTasNet(Module):
         *,
         dim = 500,            # they have 500 hidden units for the network, with 1000 at fusion (concat from both representation branches)
         small = False,        # params cut in half by 1 layer lstm vs 2, fusion uses summed representation
-        stereo = False,
+        stereo = True,
         num_basis = 1500,
         segment_len = 1024,
         overlap_len = 512,
@@ -353,6 +353,7 @@ class HSTasNet(Module):
         self,
         device = None,
         return_reduced_sources: list[int] | None = None,
+        auto_convert_to_stereo = True
     ):
         chunk_len = self.overlap_len
         self.eval()
@@ -379,6 +380,11 @@ class HSTasNet(Module):
 
             if exists(device):
                 audio_chunk = audio_chunk.to(device)
+
+            # auto repeat mono to stereo if model is trained with stereo but received audio is mono
+
+            if auto_convert_to_stereo and self.stereo and audio_chunk.shape[0] == 1:
+                audio_chunk = repeat(audio_chunk, '1 d -> s d', s = 2)
 
             # add past audio chunk
 
@@ -412,13 +418,15 @@ class HSTasNet(Module):
         duration_seconds = 10,
         channels = None,
         device = None,
+        auto_convert_to_stereo = True,
         **stream_kwargs
     ):
         assert len(return_reduced_sources) > 0
 
         transform_fn = self.init_stateful_transform_fn(
             return_reduced_sources = return_reduced_sources,
-            device = device
+            device = device,
+            auto_convert_to_stereo = auto_convert_to_stereo
         )
 
         # sounddevice stream callback, where raw audio can be transformed
@@ -499,11 +507,11 @@ class HSTasNet(Module):
         targets = None,    # (b t {s} n)
         return_reduced_sources: list[int] | None = None,
         auto_causal_pad = None,
-        auto_curtail_length_to_multiple = True
+        auto_curtail_length_to_multiple = False,
     ):
         auto_causal_pad = default(auto_causal_pad, self.training)
 
-        assert auto_curtail_length_to_multiple or divisible_by(audio_len, self.segment_len)
+        assert auto_curtail_length_to_multiple or divisible_by(audio.shape[-1], self.segment_len)
 
         # take care of audio being passed in that isn't multiple of segment length
 

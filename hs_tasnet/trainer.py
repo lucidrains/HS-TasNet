@@ -213,7 +213,11 @@ class Trainer(Module):
 
                 with self.accelerator.accumulate(self.model):
 
-                    loss = self.model(audio, targets = targets)
+                    loss = self.model(
+                        audio,
+                        targets = targets,
+                        auto_curtail_length_to_multiple = True
+                    )
 
                     self.accelerator.backward(loss)
 
@@ -255,7 +259,12 @@ class Trainer(Module):
                     self.model.eval()
 
                     with torch.no_grad():
-                        eval_loss = self.model(audio, targets = targets)
+                        eval_loss = self.model(
+                            audio,
+                            targets = targets,
+                            auto_curtail_length_to_multiple = True
+                        )
+
                         eval_losses.append(eval_loss)
 
                     avg_eval_loss = stack(eval_losses).mean()
@@ -263,7 +272,7 @@ class Trainer(Module):
 
                 self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
 
-                self.log(loss = avg_eval_loss)
+                self.log(valid_loss = avg_eval_loss)
 
             # maybe save
 
