@@ -71,6 +71,7 @@ class Trainer(Module):
         eval_dataset: Dataset | None = None,
         optim_klass = Adam,
         batch_size = 128,
+        grad_accum_every = 1,
         learning_rate = 3e-4,
         max_epochs = 10,
         max_steps = None,
@@ -127,6 +128,7 @@ class Trainer(Module):
 
         self.accelerator = Accelerator(
             cpu = cpu,
+            gradient_accumulation_steps = grad_accum_every,
             **accelerate_kwargs
         )
 
@@ -208,16 +210,19 @@ class Trainer(Module):
             # training steps
 
             for audio, targets in self.dataloader:
-                loss = self.model(audio, targets = targets)
 
-                self.print(f'[{epoch}] loss: {loss.item():.3f}')
+                with self.accelerator.accumulate(self.model):
 
-                self.log(loss = loss)
+                    loss = self.model(audio, targets = targets)
 
-                self.accelerator.backward(loss)
+                    self.accelerator.backward(loss)
 
-                self.optimizer.step()
-                self.optimizer.zero_grad()
+                    self.print(f'[{epoch}] loss: {loss.item():.3f}')
+
+                    self.log(loss = loss)
+
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
 
                 # max steps
 
