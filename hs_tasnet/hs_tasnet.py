@@ -494,9 +494,9 @@ class HSTasNet(Module):
 
     def forward(
         self,
-        audio,
+        audio,             # (b {s} n)  - {} meaning optional dimension for stereo or not
         hiddens = None,
-        targets = None,
+        targets = None,    # (b t {s} n)
         return_reduced_sources: list[int] | None = None,
         auto_causal_pad = None,
         auto_curtail_length_to_multiple = True
