@@ -54,7 +54,7 @@ def test_trainer(
 
     from torch.utils.data import Dataset
 
-    model = HSTasNet(small = True)
+    model = HSTasNet(small = True, stereo = False)
 
     class MusicSepDataset(Dataset):
         def __len__(self):
@@ -113,7 +113,7 @@ def test_musdb():
 
     mus = musdb.DB(download = True)
 
-    model = HSTasNet(stereo = True)
+    model = HSTasNet()
 
     trainer = Trainer(model, dataset = mus, batch_size = 4, cpu = True, max_steps = 2)
     trainer()

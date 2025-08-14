@@ -461,6 +461,7 @@ class HSTasNet(Module):
         input_file: str | Path,
         return_reduced_sources: list[int],
         output_file: str | Path | None = None,
+        auto_convert_to_stereo = True,
         overwrite = False
     ):
         if isinstance(input_file, str):
@@ -483,13 +484,33 @@ class HSTasNet(Module):
 
         audio_tensor = audio_tensor[..., :rounded_down_len]
 
+        # add batch
+
+        audio_tensor = rearrange(audio_tensor, '... -> 1 ...')
+
+        # maybe mono to stereo
+
+        mono_to_stereo = self.stereo and auto_convert_to_stereo and audio_tensor.shape[0] == 1
+
+        if mono_to_stereo:
+            audio_tensor = repeat(audio_tensor, '1 1 n -> 1 s n', s = 2)
+
         # transform
 
         audio_tensor = audio_tensor.to(self.device)
 
         with torch.no_grad():
             self.eval()
-            transformed = self.forward(audio_tensor, return_reduced_sources = return_reduced_sources)
+            transformed, _ = self.forward(audio_tensor, return_reduced_sources = return_reduced_sources)
+
+        # remove batch
+
+        transformed = rearrange(transformed, '1 ... -> ...')
+
+        # maybe stereo to mono
+
+        if mono_to_stereo:
+            transformed = reduce(transformed, 's n -> 1 n', 'mean')
 
         # save output file
 
@@ -498,7 +519,7 @@ class HSTasNet(Module):
 
         assert output_file != input_file
 
-        self.save_tensor_to_file(str(output_file), audio_tensor.cpu(), overwrite = overwrite)
+        self.save_tensor_to_file(str(output_file), transformed.cpu(), overwrite = overwrite)
 
     def forward(
         self,
@@ -507,7 +528,7 @@ class HSTasNet(Module):
         targets = None,    # (b t {s} n)
         return_reduced_sources: list[int] | None = None,
         auto_causal_pad = None,
-        auto_curtail_length_to_multiple = False,
+        auto_curtail_length_to_multiple = True,
     ):
         auto_causal_pad = default(auto_causal_pad, self.training)
 
