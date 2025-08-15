@@ -6,10 +6,12 @@ import torch
 @param('small', (False, True))
 @param('stereo', (False, True))
 @param('use_gru', (False, True))
+@param('var_audio_lens', (False, True))
 def test_model(
     small,
     stereo,
-    use_gru
+    use_gru,
+    var_audio_lens
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
 
@@ -25,7 +27,9 @@ def test_model(
     audio = torch.randn(3, *shape)
     targets = torch.rand(3, 4, *shape)
 
-    loss = model(audio, targets = targets)
+    audio_lens = torch.randint(1017 * 2, 1017 * 12, (3,)) if var_audio_lens else None
+
+    loss = model(audio, targets = targets, audio_lens = audio_lens)
     loss.backward()
 
     # after much training

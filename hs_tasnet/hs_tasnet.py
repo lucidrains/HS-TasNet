@@ -17,6 +17,7 @@ from torch.nn import LSTM, GRU, ConvTranspose1d, Module, ModuleList
 
 from numpy import ndarray
 
+import einx
 from einx import add, multiply, divide
 from einops import rearrange, repeat, reduce, pack, unpack
 from einops.layers.torch import Rearrange
@@ -54,6 +55,10 @@ def is_empty(t: Tensor):
 
 def round_down_to_multiple(num, mult):
     return (num // mult) * mult
+
+def lens_to_mask(lens: Tensor, max_len):
+    seq = torch.arange(max_len, device = lens.device)
+    return einx.less('b, n -> b n', lens, seq)
 
 # residual
 
@@ -526,6 +531,7 @@ class HSTasNet(Module):
         audio,             # (b {s} n)  - {} meaning optional dimension for stereo or not
         hiddens = None,
         targets = None,    # (b t {s} n)
+        audio_lens = None, # (b)
         return_reduced_sources: list[int] | None = None,
         auto_causal_pad = None,
         auto_curtail_length_to_multiple = True,
@@ -568,6 +574,16 @@ class HSTasNet(Module):
             audio = rearrange(audio, 'b l -> b 1 l')
 
         assert not (self.stereo and audio.shape[1] != 2), 'audio channels must be 2 if training stereo'
+
+        # handle masking
+
+        need_audio_mask = exists(audio_lens)
+
+        if need_audio_mask:
+            audio_lens = round_down_to_multiple(audio_lens, self.segment_len)
+            assert (audio_lens > 0).all()
+
+            audio_mask = lens_to_mask(audio_lens, audio_len)
 
         # pad the audio manually on the left side for causal, and set stft center False
 
@@ -687,7 +703,12 @@ class HSTasNet(Module):
             recon_audio = recon_audio[..., self.causal_pad:]
 
         if exists(targets):
-            recon_loss = F.l1_loss(recon_audio, targets) # they claim a simple l1 loss is better than all the complicated stuff of past
+            recon_loss = F.l1_loss(recon_audio, targets, reduction = 'none' if need_audio_mask else 'mean') # they claim a simple l1 loss is better than all the complicated stuff of past
+
+            if need_audio_mask:
+                recon_loss = rearrange(recon_loss, 'b ... n -> b n ...')
+                recon_loss = recon_loss[audio_mask].mean()
+
             return recon_loss
 
         # outputs
@@ -699,6 +720,9 @@ class HSTasNet(Module):
             next_post_spec_hidden,
             next_post_waveform_hidden
         )
+
+        if need_audio_mask:
+            recon_audio = einx.where('b n, b t n,', audio_mask, recon_audio, 0.)
 
         if exists(return_reduced_sources):
             return_reduced_sources = tensor(return_reduced_sources, device = device)
