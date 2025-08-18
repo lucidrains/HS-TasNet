@@ -11,6 +11,8 @@ from torch.utils.data import Dataset, DataLoader
 
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 from accelerate import Accelerator
 
 from hs_tasnet.hs_tasnet import HSTasNet
@@ -118,8 +120,9 @@ class GainAugmentation(Dataset):
         *,
         prob = 0.5,
         db_range = (-3., 10.),
-        clip = True,
-        clip_range = (-1., 1.)
+        clip = False,
+        clip_range = (-1., 1.),
+        recon_audio_from_targets = False
     ):
         self.dataset = dataset
 
@@ -128,6 +131,8 @@ class GainAugmentation(Dataset):
         self.db_range = db_range
         self.clip = clip
         self.clip_range = clip_range
+
+        self.recon_audio_from_targets = recon_audio_from_targets
 
     def __len__(self):
         return len(self.dataset)
@@ -148,8 +153,12 @@ class GainAugmentation(Dataset):
 
         if self.clip:
             clip_min, clip_max = self.clip_range
-            audio = audio.clamp(min = clip_min, max = clip_max)
             targets = targets.clamp(min = clip_min, max = clip_max)
+
+            if self.recon_audio_from_targets:
+                audio = reduce(targets, 't s n -> s n', 'sum')
+            else:
+                audio = audio.clamp(min = clip_min, max = clip_max)
 
         return audio, targets
 
