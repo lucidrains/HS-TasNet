@@ -58,7 +58,7 @@ def round_down_to_multiple(num, mult):
 
 def lens_to_mask(lens: Tensor, max_len):
     seq = torch.arange(max_len, device = lens.device)
-    return einx.less('b, n -> b n', lens, seq)
+    return einx.greater('b, n -> b n', lens, seq)
 
 # residual
 

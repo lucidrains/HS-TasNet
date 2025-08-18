@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import partial
 from random import random
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from torch.nn import Module
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
 
 import numpy as np
 
@@ -22,6 +24,8 @@ from ema_pytorch import EMA
 from einops import rearrange, reduce
 
 from musdb import DB as MusDB
+
+pad_sequence = partial(pad_sequence, batch_first = True)
 
 # functions
 
@@ -48,6 +52,17 @@ def not_improved_last_n_steps(losses, steps):
     last_n_losses = losses[-(steps + 1):]
 
     return (last_n_losses[1:] <= last_n_losses[:-1]).all().item()
+
+# dataset collation
+
+def collate_fn(
+    data: list[tuple[Tensor, Tensor]]
+):
+    audios, targets = tuple(zip(*data))
+
+    audio_lens = tuple(t.shape[-1] for t in audios)
+
+    return pad_sequence(audios), pad_sequence(targets), tensor(audio_lens)
 
 # dataset related
 
@@ -261,11 +276,11 @@ class Trainer(Module):
 
         # dataloader
 
-        dataloader = DataLoader(dataset, batch_size = batch_size, drop_last = True, shuffle = True)
+        dataloader = DataLoader(dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
 
         eval_dataloader = None
         if exists(eval_dataset):
-            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, shuffle = True)
+            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
 
         # hf accelerate
 
@@ -352,13 +367,14 @@ class Trainer(Module):
 
             # training steps
 
-            for audio, targets in self.dataloader:
+            for audio, targets, audio_lens in self.dataloader:
 
                 with self.accelerator.accumulate(self.model):
 
                     loss = self.model(
                         audio,
                         targets = targets,
+                        audio_lens = audio_lens,
                         auto_curtail_length_to_multiple = True
                     )
 
@@ -397,14 +413,15 @@ class Trainer(Module):
 
                 eval_losses = []
 
-                for eval_audio, eval_targets in self.eval_dataloader:
-
-                    self.model.eval()
+                for eval_audio, eval_targets, eval_audio_lens in self.eval_dataloader:
 
                     with torch.no_grad():
+                        self.model.eval()
+
                         eval_loss = self.model(
                             audio,
                             targets = targets,
+                            audio_lens = eval_audio_lens,
                             auto_curtail_length_to_multiple = True
                         )
 
@@ -415,7 +432,9 @@ class Trainer(Module):
 
                 self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
 
-                self.log(valid_loss = avg_eval_loss)
+                self.log(
+                    valid_loss = avg_eval_loss
+                )
 
             # maybe save
 
