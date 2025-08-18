@@ -149,7 +149,7 @@ class STFT(Module):
             return_complex = True
         )
 
-        return stft
+        return stft, stft.abs()
 
 # Tasnet applies a hann window to the convtranspose1d
 
@@ -594,9 +594,7 @@ class HSTasNet(Module):
 
         spec_audio_input = rearrange(audio, 'b s ... -> (b s) ...')
 
-        complex_spec = self.stft(spec_audio_input)
-
-        magnitude = complex_spec.abs()
+        complex_spec, magnitude = self.stft(spec_audio_input)
 
         spec = self.spec_encode(magnitude)
 
