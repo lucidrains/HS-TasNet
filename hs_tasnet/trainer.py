@@ -25,6 +25,8 @@ from einops import rearrange, reduce
 
 from musdb import DB as MusDB
 
+# constants
+
 pad_sequence = partial(pad_sequence, batch_first = True)
 
 # functions
@@ -224,6 +226,10 @@ class Trainer(Module):
         decay_lr_factor = 0.5,
         decay_lr_if_not_improved_steps = 3,    # decay learning rate if validation loss does not improve for this amount of epochs
         early_stop_if_not_improved_steps = 10, # they do early stopping if 10 evals without improved loss
+        use_wandb = False,
+        experiment_project = 'HS-TasNet',
+        experiment_run_name = None,
+        experiment_hparams: dict = dict(),
         augment_gain = True,
         augment_channel_swap = True
     ):
@@ -289,6 +295,21 @@ class Trainer(Module):
             gradient_accumulation_steps = grad_accum_every,
             **accelerate_kwargs
         )
+
+        # maybe experiment tracker
+
+        if use_wandb:
+
+            try:
+                import wandb
+            except ImportError:
+                print(f'install `wandb` first for experiment tracking')
+
+            self.accelerator.init_trackers(experiment_project, config = experiment_hparams)
+
+            if exists(experiment_run_name):
+                wandb_tracker = self.accelerator.trackers[0]
+                wandb_tracker.run.name = experiment_run_name
 
         # decay lr logic
 
@@ -470,5 +491,9 @@ class Trainer(Module):
 
             if exceeds_max_step:
                 break
+
+        # cleanup accelerator
+
+        self.accelerator.end_training()
 
         self.print(f'training complete')
