@@ -28,6 +28,13 @@ def exists(v):
 def divisible_by(num, den):
     return (num % den) == 0
 
+def rand_range(shape, min, max, device = None):
+    rand = torch.rand(shape, device = device)
+    return rand * (max - min) + min
+
+def db_to_amplitude(db):
+    return 10 ** (db / 20.)
+
 def not_improved_last_n_steps(losses, steps):
     if len(losses) <= steps:
         return False
@@ -36,13 +43,12 @@ def not_improved_last_n_steps(losses, steps):
 
     return (last_n_losses[1:] <= last_n_losses[:-1]).all().item()
 
+# dataset related
+
 # wrap the musdb MultiTrack if detected
 
 class MusDBDataset(Dataset):
-    def __init__(
-        self,
-        musdb_data: MultiTrack
-    ):
+    def __init__(self, musdb_data: MultiTrack):
         self.musdb_data = musdb_data
 
     def __len__(self):
@@ -61,6 +67,26 @@ class MusDBDataset(Dataset):
 
         return audio, targets
 
+# transforms
+
+class CastTorch(Dataset):
+    def __init__(self, dataset: Dataset):
+        self.dataset = dataset
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        audio, targets = self.dataset[idx]
+
+        if isinstance(audio, np.ndarray):
+            audio = torch.from_numpy(audio)
+
+        if isinstance(targets, np.ndarray):
+            targets = torch.from_numpy(targets)
+
+        return audio, targets
+
 class StereoToMonoDataset(Dataset):
     def __init__(self, dataset: Dataset):
         self.dataset = dataset
@@ -76,6 +102,44 @@ class StereoToMonoDataset(Dataset):
 
         if targets.ndim == 3:
             targets = reduce(targets, 't s n -> t n', 'mean')
+
+        return audio, targets
+
+# augmentations
+
+class GainAugmentation(Dataset):
+    def __init__(
+        self,
+        dataset: Dataset,
+        *,
+        db_range = (-3., 10.),
+        clip = True,
+        clip_range = (-1., 1.)
+    ):
+        self.dataset = dataset
+
+        self.db_range = db_range
+        self.clip = clip
+        self.clip_range = clip_range
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        audio, targets = self.dataset[idx]
+
+        db_min, db_max = self.db_range
+
+        rand_db_gain = rand_range((), db_min, db_max)
+        rand_scale = db_to_amplitude(rand_db_gain)
+
+        audio = audio * rand_scale
+        targets = targets * rand_scale
+
+        if self.clip:
+            clip_min, clip_max = self.clip_range
+            audio = audio.clamp(min = clip_min, max = clip_max)
+            targets = targets.clamp(min = clip_min, max = clip_max)
 
         return audio, targets
 
@@ -104,6 +168,7 @@ class Trainer(Module):
         decay_lr_factor = 0.5,
         decay_lr_if_not_improved_steps = 3,    # decay learning rate if validation loss does not improve for this amount of epochs
         early_stop_if_not_improved_steps = 10, # they do early stopping if 10 evals without improved loss
+        augment_gain = True
     ):
         super().__init__()
 
@@ -138,10 +203,19 @@ class Trainer(Module):
             # give musdb special treatment
             dataset = MusDBDataset(dataset)
 
+        # torch from this point on
+
+        dataset = CastTorch(dataset)
+
         # handle model is not stereo but data is stereo
 
         if not self.model_is_stereo:
             dataset = StereoToMonoDataset(dataset)
+
+        # augmentations
+
+        if augment_gain:
+            dataset = GainAugmentation(dataset)
 
         # dataloader
 
