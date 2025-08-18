@@ -110,14 +110,15 @@ def test_audio_processing():
 
     model.process_audio_file('./tests/test.mp3', [0, 2], overwrite = True)
 
-def test_musdb():
+@param('stereo', (False, True))
+def test_musdb(stereo):
     import musdb
     from hs_tasnet.hs_tasnet import HSTasNet
     from hs_tasnet.trainer import Trainer
 
     mus = musdb.DB(download = True)
 
-    model = HSTasNet()
+    model = HSTasNet(stereo = stereo)
 
     trainer = Trainer(model, dataset = mus, batch_size = 4, cpu = True, max_steps = 2)
     trainer()

@@ -16,7 +16,7 @@ from hs_tasnet.hs_tasnet import HSTasNet
 
 from ema_pytorch import EMA
 
-from einops import rearrange
+from einops import rearrange, reduce
 
 from musdb import DB as MusDB
 
@@ -61,6 +61,24 @@ class MusDBDataset(Dataset):
 
         return audio, targets
 
+class StereoToMonoDataset(Dataset):
+    def __init__(self, dataset: Dataset):
+        self.dataset = dataset
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        audio, targets = self.dataset[idx]
+
+        if audio.ndim == 2:
+            audio = reduce(audio, 's n -> n', 'mean')
+
+        if targets.ndim == 3:
+            targets = reduce(targets, 't s n -> t n', 'mean')
+
+        return audio, targets
+
 # classes
 
 class Trainer(Module):
@@ -89,6 +107,10 @@ class Trainer(Module):
     ):
         super().__init__()
 
+        # have the trainer detect if the model is stereo and handle the data accordingly
+
+        self.model_is_stereo = model.stereo
+
         # epochs
 
         self.max_epochs = max_epochs
@@ -115,6 +137,11 @@ class Trainer(Module):
         if isinstance(dataset, MusDB):
             # give musdb special treatment
             dataset = MusDBDataset(dataset)
+
+        # handle model is not stereo but data is stereo
+
+        if not self.model_is_stereo:
+            dataset = StereoToMonoDataset(dataset)
 
         # dataloader
 
