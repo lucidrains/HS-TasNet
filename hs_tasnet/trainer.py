@@ -1,4 +1,5 @@
 from __future__ import annotations
+from random import random
 from pathlib import Path
 
 import torch
@@ -27,6 +28,9 @@ def exists(v):
 
 def divisible_by(num, den):
     return (num % den) == 0
+
+def satisfy_prob(prob):
+    return random() < prob
 
 def rand_range(shape, min, max, device = None):
     rand = torch.rand(shape, device = device)
@@ -112,11 +116,14 @@ class GainAugmentation(Dataset):
         self,
         dataset: Dataset,
         *,
+        prob = 0.5,
         db_range = (-3., 10.),
         clip = True,
         clip_range = (-1., 1.)
     ):
         self.dataset = dataset
+
+        self.prob = prob
 
         self.db_range = db_range
         self.clip = clip
@@ -127,6 +134,9 @@ class GainAugmentation(Dataset):
 
     def __getitem__(self, idx):
         audio, targets = self.dataset[idx]
+
+        if not satisfy_prob(self.prob):
+            return audio, targets
 
         db_min, db_max = self.db_range
 
@@ -140,6 +150,28 @@ class GainAugmentation(Dataset):
             clip_min, clip_max = self.clip_range
             audio = audio.clamp(min = clip_min, max = clip_max)
             targets = targets.clamp(min = clip_min, max = clip_max)
+
+        return audio, targets
+
+class ChannelSwapAugmentation(Dataset):
+    def __init__(self, dataset: Dataset, *, prob = 0.5):
+        self.dataset = dataset
+        self.prob = prob
+
+    def __len__(self, len):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        audio, targets = self.dataset[idx]
+
+        if not satisfy_prob(self.prob):
+            return audio, targets
+
+        if audio.ndim == 2:
+            audio = audio.flip(dims = (0,))
+
+        if targets.ndim == 3:
+            targets = targets.flip(dims = (1,))
 
         return audio, targets
 
@@ -168,7 +200,8 @@ class Trainer(Module):
         decay_lr_factor = 0.5,
         decay_lr_if_not_improved_steps = 3,    # decay learning rate if validation loss does not improve for this amount of epochs
         early_stop_if_not_improved_steps = 10, # they do early stopping if 10 evals without improved loss
-        augment_gain = True
+        augment_gain = True,
+        augment_channel_swap = True
     ):
         super().__init__()
 
