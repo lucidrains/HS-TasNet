@@ -239,7 +239,7 @@ def augment_remix_fn(
 
     # compose new source from them. take the minimum of the audio lens
 
-    remixed_audio = reduce(remixed_targets, 'b t n -> b n', 'sum')
+    remixed_audio = reduce(remixed_targets, 'b t ... -> b ...', 'sum')
     remixed_audio_lens = reduce(audio_lens[batch_randperm], 'b t -> b', 'min')
 
     # concat onto the input
