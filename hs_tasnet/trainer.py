@@ -4,7 +4,7 @@ from random import random
 from pathlib import Path
 
 import torch
-from torch import stack, tensor
+from torch import cat, stack, tensor
 from torch.nn import Module
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
@@ -44,6 +44,15 @@ def rand_range(shape, min, max, device = None):
     rand = torch.rand(shape, device = device)
     return rand * (max - min) + min
 
+def compose(*fns):
+
+    def inner(x):
+        for fn in fns:
+            x = fn(x)
+        return x
+
+    return inner
+
 def db_to_amplitude(db):
     return 10 ** (db / 20.)
 
@@ -57,7 +66,7 @@ def not_improved_last_n_steps(losses, steps):
 
 # dataset collation
 
-def collate_fn(
+def default_collate_fn(
     data: list[tuple[Tensor, Tensor]]
 ):
     audios, targets = tuple(zip(*data))
@@ -201,6 +210,46 @@ class ChannelSwapAugmentation(Dataset):
 
         return audio, targets
 
+def augment_remix_fn(
+    inp: tuple[Tensor, Tensor, Tensor],
+    frac_augment = 0.5
+):
+    """
+    this is the effective augmentation used in the separation field that generates synthetic data by combining different tracks across different sources
+    """
+
+    audio, targets, audio_lens = inp
+
+    batch_size, device = audio.shape[0], audio.device
+    num_augment = int(frac_augment * batch_size)
+
+    if num_augment == 0:
+        return inp
+
+    num_sources = targets.shape[1]
+
+    # get indices
+
+    source_arange = torch.arange(num_sources, device = device)
+    batch_randperm = torch.randint(0, batch_size, (num_augment, num_sources), device = device)
+
+    # pick out the new targets and ...
+
+    remixed_targets = targets[batch_randperm, source_arange]
+
+    # compose new source from them. take the minimum of the audio lens
+
+    remixed_audio = reduce(remixed_targets, 'b t n -> b n', 'sum')
+    remixed_audio_lens = reduce(audio_lens[batch_randperm], 'b t -> b', 'min')
+
+    # concat onto the input
+
+    audio = cat((audio[-num_augment:], remixed_audio))
+    targets = cat((targets[-num_augment:], remixed_targets))
+    audio_lens = cat((audio_lens[-num_augment:], remixed_audio_lens))
+
+    return audio, targets, audio_lens
+
 # classes
 
 class Trainer(Module):
@@ -231,7 +280,9 @@ class Trainer(Module):
         experiment_run_name = None,
         experiment_hparams: dict = dict(),
         augment_gain = True,
-        augment_channel_swap = True
+        augment_channel_swap = True,
+        augment_remix = True,
+        augment_remix_frac = 0.5
     ):
         super().__init__()
 
@@ -279,6 +330,11 @@ class Trainer(Module):
 
         if augment_gain:
             dataset = GainAugmentation(dataset)
+
+        collate_fn = default_collate_fn
+
+        if augment_remix:
+            collate_fn = compose(collate_fn, partial(augment_remix_fn, frac_augment = augment_remix_frac))
 
         # dataloader
 
