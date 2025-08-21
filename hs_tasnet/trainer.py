@@ -298,6 +298,7 @@ class Trainer(Module):
         self.accelerator = Accelerator(
             cpu = cpu,
             gradient_accumulation_steps = grad_accum_every,
+            log_with = 'wandb' if use_wandb else None,
             **accelerate_kwargs
         )
 

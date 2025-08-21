@@ -77,6 +77,20 @@ Finally, and make sure the loss goes down
 $ uv run train.py
 ```
 
+## Experiment tracking
+
+To enable online experiment monitoring / tracking, you need to have `wandb` installed and logged in
+
+```shell
+$ pip install wandb && wandb login
+```
+
+Then
+
+```shell
+$ uv run train.py --use-wandb
+```
+
 ## Sponsors
 
 This open sourced work is sponsored by [Sweet Spot](https://github.com/sweetspotsoundsystem)
