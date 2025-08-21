@@ -1,4 +1,5 @@
 from __future__ import annotations
+from shutil import rmtree
 from functools import partial
 from random import random, randrange
 from pathlib import Path
@@ -309,6 +310,7 @@ class Trainer(Module):
         # have the trainer detect if the model is stereo and handle the data accordingly
 
         self.model_is_stereo = model.stereo
+        self.sample_rate = model.sample_rate
 
         # epochs
 
@@ -403,6 +405,8 @@ class Trainer(Module):
                 wandb_tracker = self.accelerator.trackers[0]
                 wandb_tracker.run.name = experiment_run_name
 
+        self.use_wandb = use_wandb
+
         # decay lr logic
 
         scheduler = StepLR(optimizer, 1, gamma = decay_lr_factor)
@@ -457,6 +461,13 @@ class Trainer(Module):
         # step
 
         self.register_buffer('step', tensor(0))
+
+    def clear_folders(self):
+        rmtree(str(self.checkpoint_folder), ignore_errors = True)
+        self.checkpoint_folder.mkdir(parents = True, exist_ok = True)
+
+        rmtree(str(self.eval_results_folder), ignore_errors = True)
+        self.eval_results_folder.mkdir(parents = True, exist_ok = True)
 
     @property
     def device(self):
@@ -556,6 +567,8 @@ class Trainer(Module):
 
                 self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
 
+                eval_logs = dict(valid_loss = avg_eval_loss)
+
                 if self.is_main:
                     model = self.unwrapped_model
 
@@ -576,14 +589,24 @@ class Trainer(Module):
 
                     # save files to folder
 
+                    eval_audio_paths = []
+
                     model.save_tensor_to_file(one_eval_result_folder / 'audio.mp3', eval_audio, overwrite = True)
+
+                    eval_audio_paths.append(('eval_audio', str(one_eval_result_folder / 'audio.mp3')))
 
                     for index, target_audio in enumerate(separated_audio):
                         model.save_tensor_to_file(one_eval_result_folder / f'{index}.mp3', target_audio, overwrite = True)
 
-                self.log(
-                    valid_loss = avg_eval_loss
-                )
+                        eval_audio_paths.append((f'target_audio_{index}', str(one_eval_result_folder / f'{index}.mp3')))
+
+                    if self.use_wandb:
+                        from wandb import Audio
+
+                        for name, eval_audio_path in eval_audio_paths:
+                            eval_logs[name] = Audio(eval_audio_path, sample_rate = self.sample_rate)
+
+                self.log(**eval_logs)
 
             # maybe save
 

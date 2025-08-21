@@ -1,5 +1,7 @@
 tests/test-out.mp3
 wandb/
+eval-results/
+checkpoints/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

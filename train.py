@@ -8,6 +8,7 @@
 
 # model
 
+from shutil import rmtree
 import fire
 
 import musdb
@@ -24,7 +25,8 @@ def train(
     wandb_project = 'HS-TasNet',
     wandb_run_name = None,
     split_dataset_for_eval = True,
-    split_dataset_eval_frac = 0.05
+    split_dataset_eval_frac = 0.05,
+    clear_folders = False
 ):
 
     model = HSTasNet(
@@ -51,6 +53,9 @@ def train(
         experiment_run_name = wandb_run_name,
         random_split_dataset_for_eval_frac = 0. if not split_dataset_for_eval else split_dataset_eval_frac
     )
+
+    if clear_folders:
+        trainer.clear_folders()
 
     trainer()
 

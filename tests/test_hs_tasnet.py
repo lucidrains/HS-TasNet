@@ -91,6 +91,8 @@ def test_trainer(
         use_ema = with_ema
     )
 
+    trainer.clear_folders()
+
     trainer()
 
     if with_eval:
