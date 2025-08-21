@@ -1,6 +1,6 @@
 <img src="./fig1.png" width="350px"></img>
 
-## HS-TasNet (wip)
+## HS-TasNet
 
 Implementation of [HS-TasNet](https://arxiv.org/abs/2402.17701), "Real-time Low-latency Music Source Separation using Hybrid Spectrogram-TasNet", proposed by the research team at L-Acoustics
 
