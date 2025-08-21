@@ -1,6 +1,6 @@
 from __future__ import annotations
 from functools import partial
-from random import random
+from random import random, randrange
 from pathlib import Path
 
 import torch
@@ -280,6 +280,7 @@ class Trainer(Module):
         ema_kwargs: dict = dict(),
         checkpoint_every = 1,
         checkpoint_folder = './checkpoints',
+        eval_results_folder = './eval-results',
         decay_lr_factor = 0.5,
         decay_lr_if_not_improved_steps = 3,    # decay learning rate if validation loss does not improve for this amount of epochs
         early_stop_if_not_improved_steps = 10, # they do early stopping if 10 evals without improved loss
@@ -376,7 +377,16 @@ class Trainer(Module):
         eval_dataloader = None
 
         if exists(eval_dataset):
-            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, collate_fn = collate_fn)
+            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
+
+        self.eval_dataset = eval_dataset
+
+        # evaluation results
+
+        eval_results_folder = Path(eval_results_folder)
+        eval_results_folder.mkdir(parents = True, exist_ok = True)
+
+        self.eval_results_folder = eval_results_folder
 
         # maybe experiment tracker
 
@@ -476,7 +486,7 @@ class Trainer(Module):
         exceeds_max_step = False
         past_eval_losses = [] # for learning rate decay and early stopping detection
 
-        for epoch in range(self.max_epochs):
+        for epoch in range(1, self.max_epochs + 1):
 
             self.model.train()
 
@@ -545,6 +555,31 @@ class Trainer(Module):
                     past_eval_losses.append(avg_eval_loss)
 
                 self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
+
+                if self.is_main:
+                    model = self.unwrapped_model
+
+                    # take a random sample from eval dataset and store the audio and spectrogram results
+
+                    rand_index = randrange(len(self.eval_dataset))
+                    eval_audio, *_ = self.eval_dataset[rand_index]
+
+                    with torch.no_grad():
+                        eval_audio = rearrange(eval_audio, '... -> 1 ...')
+                        separated_audio, _ = model(eval_audio)
+                        separated_audio = rearrange(separated_audio, '1 ... -> ...')
+
+                    # make sure folder exists - each evaluation epoch gets a folder for separated audio and spec
+
+                    one_eval_result_folder = self.eval_results_folder / str(epoch)
+                    one_eval_result_folder.mkdir(parents = True, exist_ok = True)
+
+                    # save files to folder
+
+                    model.save_tensor_to_file(one_eval_result_folder / 'audio.mp3', eval_audio, overwrite = True)
+
+                    for index, target_audio in enumerate(separated_audio):
+                        model.save_tensor_to_file(one_eval_result_folder / f'{index}.mp3', target_audio, overwrite = True)
 
                 self.log(
                     valid_loss = avg_eval_loss

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 param = pytest.mark.parametrize
 
@@ -90,6 +92,10 @@ def test_trainer(
     )
 
     trainer()
+
+    if with_eval:
+        eval_folder = Path('./eval-results/1')
+        assert eval_folder.exists() and eval_folder.is_dir()
 
 def test_audio_processing():
     from hs_tasnet.hs_tasnet import HSTasNet
