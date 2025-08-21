@@ -1,29 +1,44 @@
 # /// script
 # dependencies = [
+#   "fire",
 #   "HS-TasNet"
 # ]
 # ///
 
 # model
 
-from hs_tasnet import HSTasNet
-
-model = HSTasNet()
-
-# the musdb dataset
+import fire
 
 import musdb
-mus = musdb.DB(download = True)
+from hs_tasnet import HSTasNet, Trainer
 
-# trainer
+@fire.Fire
+def train(
+    small = False
+):
 
-from hs_tasnet import Trainer
+    model = HSTasNet(
+        small = small
+    )
 
-trainer = Trainer(
-    model,
-    dataset = mus,
-    batch_size = 4,
-    max_steps = 50_000,
-)
+    # the musdb dataset
 
-trainer()
+    mus = musdb.DB(download = True)
+
+    # trainer
+
+    from hs_tasnet import Trainer
+
+    trainer = Trainer(
+        model,
+        dataset = mus,
+        batch_size = 4,
+        max_steps = 50_000,
+    )
+
+    trainer()
+
+# fire cli
+# --small for small model
+
+train()

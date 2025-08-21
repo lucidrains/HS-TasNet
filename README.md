@@ -57,6 +57,26 @@ model.sounddevice_stream(...)
 
 ```
 
+## Training script
+
+First make sure dependencies are there by running
+
+```shell
+$ sh install.sh
+```
+
+Then make sure `uv` is installed
+
+```shell
+$ pip install uv
+```
+
+Finally, and make sure the loss goes down
+
+```shell
+$ uv run train.py
+```
+
 ## Sponsors
 
 This open sourced work is sponsored by [Sweet Spot](https://github.com/sweetspotsoundsystem)

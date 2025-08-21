@@ -452,6 +452,8 @@ class Trainer(Module):
 
     def forward(self):
 
+        self.print(f'\nstarting training for HSTasNet with {self.unwrapped_model.num_parameters} params\n')
+
         exceeds_max_step = False
         past_eval_losses = [] # for learning rate decay and early stopping detection
 
