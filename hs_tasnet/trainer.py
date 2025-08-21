@@ -71,9 +71,11 @@ def default_collate_fn(
 ):
     audios, targets = tuple(zip(*data))
 
+    audios, targets = tuple(pad_sequence(t) for t in (audios, targets))
+
     audio_lens = tuple(t.shape[-1] for t in audios)
 
-    return pad_sequence(audios), pad_sequence(targets), tensor(audio_lens)
+    return audios, targets, tensor(audio_lens, device = audios.device)
 
 # dataset related
 
@@ -102,8 +104,9 @@ class MusDBDataset(Dataset):
 # transforms
 
 class CastTorch(Dataset):
-    def __init__(self, dataset: Dataset):
+    def __init__(self, dataset: Dataset, device = None):
         self.dataset = dataset
+        self.device = device
 
     def __len__(self):
         return len(self.dataset)
@@ -116,6 +119,10 @@ class CastTorch(Dataset):
 
         if isinstance(targets, np.ndarray):
             targets = torch.from_numpy(targets)
+
+        if exists(self.device):
+            audio = audio.to(self.device)
+            targets = targets.to(self.device)
 
         return audio, targets
 
@@ -286,6 +293,16 @@ class Trainer(Module):
     ):
         super().__init__()
 
+        # hf accelerate
+
+        self.accelerator = Accelerator(
+            cpu = cpu,
+            gradient_accumulation_steps = grad_accum_every,
+            **accelerate_kwargs
+        )
+
+        device = self.accelerator.device
+
         # have the trainer detect if the model is stereo and handle the data accordingly
 
         self.model_is_stereo = model.stereo
@@ -319,7 +336,7 @@ class Trainer(Module):
 
         # torch from this point on
 
-        dataset = CastTorch(dataset)
+        dataset = CastTorch(dataset, device = device)
 
         # handle model is not stereo but data is stereo
 
@@ -343,14 +360,6 @@ class Trainer(Module):
         eval_dataloader = None
         if exists(eval_dataset):
             eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
-
-        # hf accelerate
-
-        self.accelerator = Accelerator(
-            cpu = cpu,
-            gradient_accumulation_steps = grad_accum_every,
-            **accelerate_kwargs
-        )
 
         # maybe experiment tracker
 
@@ -447,7 +456,6 @@ class Trainer(Module):
             for audio, targets, audio_lens in self.dataloader:
 
                 with self.accelerator.accumulate(self.model):
-
                     loss = self.model(
                         audio,
                         targets = targets,
