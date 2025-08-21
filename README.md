@@ -46,6 +46,15 @@ model.sounddevice_stream(
     return_reduced_sources = [0, 2]
 )
 
+# or from the exponentially smoothed model (in the trainer)
+
+trainer.ema_model.sounddevice_stream(...)
+
+# or you can load from a specific checkpoint
+
+model.load('./checkpoints/path.to.desired.ckpt.pt')
+model.sounddevice_stream(...)
+
 ```
 
 ## Sponsors

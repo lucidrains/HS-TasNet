@@ -387,7 +387,15 @@ class Trainer(Module):
         self.use_ema = use_ema
 
         if use_ema:
-            self.ema_model = EMA(model, beta = ema_decay, **ema_kwargs)
+            self.ema_model = EMA(
+                model,
+                beta = ema_decay,
+                forward_method_names = (
+                    'sounddevice_stream',
+                    'process_audio_file',
+                ),
+                **ema_kwargs
+            )
 
         # preparing
 
