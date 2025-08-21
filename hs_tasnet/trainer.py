@@ -8,7 +8,7 @@ from torch import cat, stack, tensor
 from torch.nn import Module
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
 from torch.nn.utils.rnn import pad_sequence
 
 import numpy as np
@@ -265,6 +265,7 @@ class Trainer(Module):
         model: HSTasNet,
         dataset: Dataset | MusDB,
         eval_dataset: Dataset | None = None,
+        random_split_dataset_for_eval_frac = 0., # if set higher than 0., will split off this fraction of the training dataset for evaluation - eval_dataset must be None
         optim_klass = Adam,
         batch_size = 128,
         grad_accum_every = 1,
@@ -335,6 +336,20 @@ class Trainer(Module):
             # give musdb special treatment
             dataset = MusDBDataset(dataset)
 
+        # maybe split dataset for eval
+
+        need_split_train_dataset = random_split_dataset_for_eval_frac > 0
+        assert not (need_split_train_dataset and exists(eval_dataset)), f'`eval_dataset` must not be passed in if `random_split_dataset_for_eval_frac` set greater than 0.'
+
+        if not exists(eval_dataset) and need_split_train_dataset:
+            train_size = int((1. - random_split_dataset_for_eval_frac) * len(dataset))
+            eval_size = len(dataset) - train_size
+            dataset, eval_dataset = random_split(dataset, (train_size, eval_size))
+
+        # print
+
+        self.print(f'\ntraining on dataset of {len(dataset)} samples')
+
         # torch from this point on
 
         dataset = CastTorch(dataset, device = device)
@@ -359,8 +374,9 @@ class Trainer(Module):
         dataloader = DataLoader(dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
 
         eval_dataloader = None
+
         if exists(eval_dataset):
-            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
+            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, collate_fn = collate_fn)
 
         # maybe experiment tracker
 
@@ -424,6 +440,8 @@ class Trainer(Module):
         # prepare eval
 
         if self.needs_eval:
+            self.print(f'\nevaluating on dataset of {len(eval_dataset)} samples')
+
             self.eval_dataloader = self.accelerator.prepare(eval_dataloader)
 
         # step

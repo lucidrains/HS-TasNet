@@ -194,7 +194,8 @@ class HSTasNet(Module):
         sample_rate = 44_100, # they use 41k sample rate
         num_sources = 4,      # drums, bass, vocals, other
         torch_compile = False,
-        use_gru = False
+        use_gru = False,
+        norm_before_mask_estimate = True # for some reason, training is unstable without a norm - improvise by adding an RMSNorm before final projection
     ):
         super().__init__()
 
@@ -240,6 +241,7 @@ class HSTasNet(Module):
         )
 
         self.to_spec_masks = nn.Sequential(
+            nn.RMSNorm(dim) if norm_before_mask_estimate else nn.Identity(),
             nn.Linear(dim, spec_dim_input * num_sources),
             Rearrange('b n (s f t) -> (b s) f n t', s = audio_channels, t = num_sources)
         )
@@ -256,6 +258,7 @@ class HSTasNet(Module):
         )
 
         self.to_waveform_masks = nn.Sequential(
+            nn.RMSNorm(dim) if norm_before_mask_estimate else nn.Identity(),
             nn.Linear(dim, num_sources * num_basis),
             Rearrange('... (t basis) -> ... basis t', t = num_sources)
         )
@@ -264,11 +267,11 @@ class HSTasNet(Module):
 
         # init mask to identity
 
-        nn.init.zeros_(self.to_spec_masks[0].weight)
-        nn.init.constant_(self.to_spec_masks[0].bias, 1.)
+        nn.init.zeros_(self.to_spec_masks[1].weight)
+        nn.init.constant_(self.to_spec_masks[1].bias, 1.)
 
-        nn.init.zeros_(self.to_waveform_masks[0].weight)
-        nn.init.constant_(self.to_waveform_masks[0].bias, 1.)
+        nn.init.zeros_(self.to_waveform_masks[1].weight)
+        nn.init.constant_(self.to_waveform_masks[1].bias, 1.)
 
         # they do a single layer of lstm in their "small" variant
 
