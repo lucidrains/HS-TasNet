@@ -77,6 +77,8 @@ Finally, and make sure the loss goes down
 $ uv run train.py
 ```
 
+For distributed training, you just need to run `accelerate config` first, courtesy of [`accelerate` from 🤗](https://huggingface.co/docs/accelerate/en/index) but single machine is fine too
+
 ## Experiment tracking
 
 To enable online experiment monitoring / tracking, you need to have `wandb` installed and logged in
