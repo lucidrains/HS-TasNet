@@ -5,6 +5,7 @@ from pathlib import Path
 from functools import partial, wraps
 
 import torchaudio
+from torchaudio import transforms as T
 from torchaudio.functional import resample
 
 import sounddevice as sd
@@ -21,6 +22,9 @@ import einx
 from einx import add, multiply, divide
 from einops import rearrange, repeat, reduce, pack, unpack
 from einops.layers.torch import Rearrange
+
+import librosa
+import matplotlib.pyplot as plt
 
 # ein tensor notation:
 
@@ -227,6 +231,10 @@ class HSTasNet(Module):
 
         # spec branch encoder stft hparams
 
+        self.n_fft = n_fft
+        self.win_length = segment_len
+        self.hop_length = overlap_len
+
         self.stft = STFT(
             n_fft = n_fft,
             win_length = segment_len,
@@ -304,6 +312,54 @@ class HSTasNet(Module):
     @property
     def num_parameters(self):
         return sum([p.numel() for p in self.parameters()])
+
+    # get a spectrogram figure based on hparams of the model
+
+    def save_spectrogram_figure(
+        self,
+        save_path: str | Path,
+        audio: ndarray | Tensor,
+        figsize = (10, 4),
+        overwrite = False
+    ):
+
+        if isinstance(save_path, str):
+            save_path = Path(save_path)
+
+        assert overwrite or not save_path.exists(), f'{str(save_path)} already exists'
+
+        # cast to torch tensor
+
+        if isinstance(audio, ndarray):
+            audio = torch.from_numpy(audio)
+
+        assert audio.ndim == 1
+        audio = audio.detach().cpu()
+
+        # stft to magnitude to db
+
+        stft = torch.stft(audio, n_fft = self.n_fft, hop_length = self.hop_length, return_complex = True)
+        magnitude = stft.abs()
+
+        db = T.AmplitudeToDB()(magnitude)
+
+        # pyplot and librosa
+
+        plt.figure(figsize = figsize)
+
+        librosa.display.specshow(
+            db.numpy(),
+            hop_length = self.hop_length,
+            sr = self.sample_rate,
+            x_axis = 's',
+            y_axis = 'hz'
+        )
+
+        plt.colorbar(format = '%+2.0f dB')
+        plt.title('Power/Frequency (dB)')
+        plt.tight_layout()
+
+        plt.savefig(str(save_path))
 
     # saving and loading
 

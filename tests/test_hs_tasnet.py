@@ -118,6 +118,18 @@ def test_audio_processing():
 
     model.process_audio_file('./tests/test.mp3', [0, 2], overwrite = True)
 
+def test_save_spectrogram_fig():
+    from hs_tasnet.hs_tasnet import HSTasNet
+
+    model = HSTasNet(
+        dim = 512,
+        stereo = False
+    )
+
+    audio = torch.randn(41_000 * 5)
+
+    model.save_spectrogram_figure('./spec.png', audio, overwrite = True)
+
 @param('stereo', (False, True))
 def test_musdb(stereo):
     import musdb
