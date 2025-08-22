@@ -333,6 +333,10 @@ class HSTasNet(Module):
         if isinstance(audio, ndarray):
             audio = torch.from_numpy(audio)
 
+        if audio.ndim == 2:
+            # average stereo for now
+            audio = reduce(audio, 's n -> n', 'mean')
+
         assert audio.ndim == 1
         audio = audio.detach().cpu()
 

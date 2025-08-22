@@ -599,24 +599,38 @@ class Trainer(Module):
                     one_eval_result_folder = self.eval_results_folder / str(epoch)
                     one_eval_result_folder.mkdir(parents = True, exist_ok = True)
 
-                    # save files to folder
+                    # save eval files (audio and spectrogram) to folder
 
                     eval_audio_paths = []
+                    eval_spec_img_paths = []
 
                     model.save_tensor_to_file(one_eval_result_folder / 'audio.mp3', eval_audio, overwrite = True)
 
                     eval_audio_paths.append(('eval_audio', str(one_eval_result_folder / 'audio.mp3')))
+                    eval_spec_img_paths.append(('eval_spec', str(one_eval_result_folder / 'spec.png')))
 
                     for index, target_audio in enumerate(separated_audio):
-                        model.save_tensor_to_file(one_eval_result_folder / f'target.separated.{index}.mp3', target_audio, overwrite = True)
 
-                        eval_audio_paths.append((f'target_audio_{index}', str(one_eval_result_folder / f'{index}.mp3')))
+                        saved_audio_path = one_eval_result_folder / f'target.separated.{index}.mp3'
+                        saved_spectrogram_path = one_eval_result_folder / f'target.separated.spectrogram.{index}.png'
+
+                        model.save_tensor_to_file(saved_audio_path, target_audio, overwrite = True)
+
+                        model.save_spectrogram_figure(saved_spectrogram_path, target_audio)
+
+                        eval_audio_paths.append((f'target_audio_{index}', str(saved_audio_path)))
+                        eval_spec_img_paths.append((f'target_spec_{index}', str(saved_spectrogram_path)))
+
+                    # log audio and spec images to wandb experiment if need be
 
                     if self.use_wandb:
-                        from wandb import Audio
+                        from wandb import Audio, Image
 
                         for name, eval_audio_path in eval_audio_paths:
                             eval_logs[name] = Audio(eval_audio_path, sample_rate = self.sample_rate)
+
+                        for name, eval_spec_img_path in eval_spec_img_paths:
+                            eval_logs[name] = Image(eval_spec_img_path)
 
                 self.log(**eval_logs)
 
