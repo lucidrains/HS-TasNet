@@ -357,12 +357,19 @@ class Trainer(Module):
 
         dataset = CastTorch(dataset, device = device)
 
+        if exists(eval_dataset):
+            eval_dataset = CastTorch(eval_dataset, device = device)
+
         # handle model is not stereo but data is stereo
 
         if not self.model_is_stereo:
             dataset = StereoToMonoDataset(dataset)
 
+            if exists(eval_dataset):
+                eval_dataset = StereoToMonoDataset(eval_dataset)
+
         # augmentations
+        # only for training `dataset`
 
         if augment_gain:
             dataset = GainAugmentation(dataset)
@@ -379,7 +386,7 @@ class Trainer(Module):
         eval_dataloader = None
 
         if exists(eval_dataset):
-            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
+            eval_dataloader = DataLoader(eval_dataset, batch_size = batch_size, drop_last = False, shuffle = True, collate_fn = default_collate_fn)
 
         self.eval_dataset = eval_dataset
 
@@ -461,6 +468,8 @@ class Trainer(Module):
         # step
 
         self.register_buffer('step', tensor(0))
+
+        self.register_buffer('zero', tensor(0.), persistent = False)
 
     def clear_folders(self):
         rmtree(str(self.checkpoint_folder), ignore_errors = True)
@@ -546,24 +555,25 @@ class Trainer(Module):
 
                 # evaluation at the end of each epoch
 
-                eval_losses = []
+                avg_eval_loss = self.zero
 
+                eval_losses = []
                 for eval_audio, eval_targets, eval_audio_lens in self.eval_dataloader:
 
                     with torch.no_grad():
                         self.model.eval()
 
                         eval_loss = self.model(
-                            audio,
-                            targets = targets,
+                            eval_audio,
+                            targets = eval_targets,
                             audio_lens = eval_audio_lens,
                             auto_curtail_length_to_multiple = True
                         )
 
                         eval_losses.append(eval_loss)
 
-                    avg_eval_loss = stack(eval_losses).mean()
-                    past_eval_losses.append(avg_eval_loss)
+                avg_eval_loss = stack(eval_losses).mean()
+                past_eval_losses.append(avg_eval_loss)
 
                 self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
 
@@ -578,6 +588,8 @@ class Trainer(Module):
                     eval_audio, *_ = self.eval_dataset[rand_index]
 
                     with torch.no_grad():
+                        model.eval()
+
                         eval_audio = rearrange(eval_audio, '... -> 1 ...')
                         separated_audio, _ = model(eval_audio)
                         separated_audio = rearrange(separated_audio, '1 ... -> ...')
@@ -596,7 +608,7 @@ class Trainer(Module):
                     eval_audio_paths.append(('eval_audio', str(one_eval_result_folder / 'audio.mp3')))
 
                     for index, target_audio in enumerate(separated_audio):
-                        model.save_tensor_to_file(one_eval_result_folder / f'{index}.mp3', target_audio, overwrite = True)
+                        model.save_tensor_to_file(one_eval_result_folder / f'target.separated.{index}.mp3', target_audio, overwrite = True)
 
                         eval_audio_paths.append((f'target_audio_{index}', str(one_eval_result_folder / f'{index}.mp3')))
 

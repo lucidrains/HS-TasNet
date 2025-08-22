@@ -18,7 +18,7 @@ from hs_tasnet import HSTasNet, Trainer
 def train(
     small = False,
     stereo = False,
-    batch_size = 4,
+    batch_size = 16,
     max_steps = 50_000,
     max_epochs = 20,
     use_wandb = False,
