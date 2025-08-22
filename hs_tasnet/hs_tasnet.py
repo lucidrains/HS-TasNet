@@ -342,7 +342,13 @@ class HSTasNet(Module):
 
         # stft to magnitude to db
 
-        stft = torch.stft(audio, n_fft = self.n_fft, hop_length = self.hop_length, return_complex = True)
+        stft = T.Spectrogram(
+            n_fft = self.n_fft,
+            hop_length = self.hop_length,
+            return_complex = True,
+            power = 2.
+        )(audio)
+
         magnitude = stft.abs()
 
         db = T.AmplitudeToDB()(magnitude)
