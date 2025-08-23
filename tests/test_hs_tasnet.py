@@ -9,11 +9,13 @@ import torch
 @param('stereo', (False, True))
 @param('use_gru', (False, True))
 @param('var_audio_lens', (False, True))
+@param('spec_branch_use_phase', (False, True))
 def test_model(
     small,
     stereo,
     use_gru,
-    var_audio_lens
+    var_audio_lens,
+    spec_branch_use_phase
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
 
@@ -21,7 +23,8 @@ def test_model(
         dim = 512,
         small = small,
         stereo = stereo,
-        use_gru = use_gru
+        use_gru = use_gru,
+        spec_branch_use_phase = spec_branch_use_phase
     )
 
     shape = (2, 1017 * 12) if stereo else (1017 * 12,)
@@ -100,6 +103,17 @@ def test_trainer(
         assert eval_folder.exists() and eval_folder.is_dir()
 
 def test_audio_processing():
+    import sounddevice as sd
+
+    device_list = sd.query_devices()
+    num_devices = len(device_list)
+
+    if num_devices == 0:
+        pytest.skip()
+        return
+
+    # test sound device stream
+
     from hs_tasnet.hs_tasnet import HSTasNet
 
     model = HSTasNet(

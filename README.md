@@ -93,6 +93,18 @@ Then
 $ uv run train.py --use-wandb
 ```
 
+## Test
+
+```shell
+$ uv pip install '.[test]' --system
+```
+
+Then
+
+```shell
+$ pytest tests
+```
+
 ## Sponsors
 
 This open sourced work is sponsored by [Sweet Spot](https://github.com/sweetspotsoundsystem)

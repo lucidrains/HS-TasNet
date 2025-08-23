@@ -199,6 +199,7 @@ class HSTasNet(Module):
         num_sources = 4,      # drums, bass, vocals, other
         torch_compile = False,
         use_gru = False,
+        spec_branch_use_phase = True,
         norm_before_mask_estimate = True # for some reason, training is unstable without a norm - improvise by adding an RMSNorm before final projection
     ):
         super().__init__()
@@ -241,7 +242,9 @@ class HSTasNet(Module):
             hop_length = overlap_len
         )
 
-        spec_dim_input = (n_fft // 2 + 1) * audio_channels
+        spec_dim_input = (n_fft // 2 + 1) * audio_channels * (2 if spec_branch_use_phase else 1)
+
+        self.spec_branch_use_phase = spec_branch_use_phase # use the phase, proven out in another music sep paper
 
         self.spec_encode = nn.Sequential(
             Rearrange('(b s) f n ... -> b n (s f ...)', s = audio_channels),
@@ -251,7 +254,7 @@ class HSTasNet(Module):
         self.to_spec_masks = nn.Sequential(
             nn.RMSNorm(dim) if norm_before_mask_estimate else nn.Identity(),
             nn.Linear(dim, spec_dim_input * num_sources),
-            Rearrange('b n (s f t) -> (b s) f n t', s = audio_channels, t = num_sources)
+            Rearrange('b n (s f c t) -> (b s) f n c t', s = audio_channels, t = num_sources, c = 2 if spec_branch_use_phase else 1)
         )
 
         # waveform branch encoder
@@ -370,6 +373,7 @@ class HSTasNet(Module):
         plt.tight_layout()
 
         plt.savefig(str(save_path))
+        plt.close()
 
     # saving and loading
 
@@ -670,7 +674,14 @@ class HSTasNet(Module):
 
         complex_spec, magnitude = self.stft(spec_audio_input)
 
-        spec = self.spec_encode(magnitude)
+        if self.spec_branch_use_phase:
+            real_imag_spec = torch.view_as_real(complex_spec)
+
+            spec = self.spec_encode(real_imag_spec)
+
+        else:
+
+            spec = self.spec_encode(magnitude)
 
         # handle encoding as detailed in original tasnet
         # to keep non-negative, they do a glu with relu on main branch
@@ -738,13 +749,22 @@ class HSTasNet(Module):
 
         spec_mask = self.to_spec_masks(spec)
 
-        magnitude, phase = complex_spec.abs(), complex_spec.angle()
+        if self.spec_branch_use_phase:
 
-        scaled_magnitude = multiply('b ..., b ... t -> (b t) ...', magnitude, spec_mask)
+            scaled_real_imag_spec = multiply('b ..., b ... t -> (b t) ...', real_imag_spec, spec_mask)
 
-        phase = repeat(phase, 'b ... -> (b t) ...', t = self.num_sources)
+            complex_spec_per_source = torch.view_as_complex(scaled_real_imag_spec.contiguous())
 
-        complex_spec_per_source = torch.polar(scaled_magnitude, phase)
+        else:
+            spec_mask = rearrange(spec_mask, '... 1 t -> ... t')
+
+            magnitude, phase = complex_spec.abs(), complex_spec.angle()
+
+            scaled_magnitude = multiply('b ..., b ... t -> (b t) ...', magnitude, spec_mask)
+
+            phase = repeat(phase, 'b ... -> (b t) ...', t = self.num_sources)
+
+            complex_spec_per_source = torch.polar(scaled_magnitude, phase)
 
         recon_audio_from_spec = self.stft.inverse(complex_spec_per_source)
 
