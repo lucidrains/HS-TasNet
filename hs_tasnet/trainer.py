@@ -605,6 +605,7 @@ class Trainer(Module):
                     eval_spec_img_paths = []
 
                     model.save_tensor_to_file(one_eval_result_folder / 'audio.mp3', eval_audio, overwrite = True)
+                    model.save_spectrogram_figure(one_eval_result_folder / 'spec.png', eval_audio, overwrite = True)
 
                     eval_audio_paths.append(('eval_audio', str(one_eval_result_folder / 'audio.mp3')))
                     eval_spec_img_paths.append(('eval_spec', str(one_eval_result_folder / 'spec.png')))
@@ -616,7 +617,7 @@ class Trainer(Module):
 
                         model.save_tensor_to_file(saved_audio_path, target_audio, overwrite = True)
 
-                        model.save_spectrogram_figure(saved_spectrogram_path, target_audio)
+                        model.save_spectrogram_figure(saved_spectrogram_path, target_audio, overwrite = True)
 
                         eval_audio_paths.append((f'target_audio_{index}', str(saved_audio_path)))
                         eval_spec_img_paths.append((f'target_spec_{index}', str(saved_spectrogram_path)))
