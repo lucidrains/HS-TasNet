@@ -242,7 +242,8 @@ class HSTasNet(Module):
             hop_length = overlap_len
         )
 
-        spec_dim_input = (n_fft // 2 + 1) * audio_channels * (2 if spec_branch_use_phase else 1)
+        real_imag_dim = 2 if spec_branch_use_phase else 1
+        spec_dim_input = (n_fft // 2 + 1) * audio_channels * real_imag_dim
 
         self.spec_branch_use_phase = spec_branch_use_phase # use the phase, proven out in another music sep paper
 
@@ -254,7 +255,7 @@ class HSTasNet(Module):
         self.to_spec_masks = nn.Sequential(
             nn.RMSNorm(dim) if norm_before_mask_estimate else nn.Identity(),
             nn.Linear(dim, spec_dim_input * num_sources),
-            Rearrange('b n (s f c t) -> (b s) f n c t', s = audio_channels, t = num_sources, c = 2 if spec_branch_use_phase else 1)
+            Rearrange('b n (s f c t) -> (b s) f n c t', s = audio_channels, t = num_sources, c = real_imag_dim)
         )
 
         # waveform branch encoder
