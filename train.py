@@ -26,7 +26,9 @@ def train(
     wandb_run_name = None,
     split_dataset_for_eval = True,
     split_dataset_eval_frac = 0.05,
-    clear_folders = False
+    clear_folders = False,
+    full_train_dataset = False,
+    full_train_dataset_root = "./full-musdb-dataset"
 ):
 
     model = HSTasNet(
@@ -36,7 +38,12 @@ def train(
 
     # the musdb dataset
 
-    mus = musdb.DB(download = True)
+    if full_train_dataset:
+        musdb_kwargs = dict(root = full_train_dataset_root)
+    else:
+        musdb_kwargs = dict(download = True)
+
+    mus = musdb.DB(**musdb_kwargs)
 
     # trainer
 
