@@ -640,10 +640,10 @@ class Trainer(Module):
             self.wait()
 
             if (
-                divisible_by(epoch + 1, self.checkpoint_every) and
+                divisible_by(epoch, self.checkpoint_every) and
                 self.is_main
             ):
-                checkpoint_index = (epoch + 1) // self.checkpoint_every
+                checkpoint_index = epoch // self.checkpoint_every
                 self.unwrapped_model.save(self.checkpoint_folder / f'hs-tasnet.ckpt.{checkpoint_index}.pt')
 
                 if self.use_ema:
@@ -659,6 +659,7 @@ class Trainer(Module):
                 # decay lr if criteria met
 
                 if not_improved_last_n_steps(last_n_eval_losses, self.decay_lr_if_not_improved_steps):
+                    self.print(f'decaying learning rate as validation has not improved for {self.decay_lr_if_not_improved_steps} steps')
                     self.scheduler.step()
 
                 # early stop if criteria met
