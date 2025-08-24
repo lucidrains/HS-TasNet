@@ -84,7 +84,7 @@ Then make sure `uv` is installed
 $ pip install uv
 ```
 
-Finally, and make sure the loss goes down
+Finally run the following to train a newly initialized model on a small subset of MusDB, and make sure the loss goes down
 
 ```shell
 $ uv run train.py
