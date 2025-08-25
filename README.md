@@ -68,6 +68,10 @@ trainer.ema_model.sounddevice_stream(...)
 model.load('./checkpoints/path.to.desired.ckpt.pt')
 model.sounddevice_stream(...)
 
+# to load an HS-TasNet from any of the saved checkpoints, without having to save its hyperparameters, just run
+
+model = HSTasNet.init_and_load_from('./checkpoints/path.to.desired.ckpt.pt')
+
 ```
 
 ## Training script

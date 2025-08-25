@@ -69,4 +69,5 @@ def train(
 # fire cli
 # --small for small model
 
-train()
+if __name__ == '__main__':
+    train()

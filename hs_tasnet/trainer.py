@@ -63,7 +63,7 @@ def not_improved_last_n_steps(losses, steps):
 
     last_n_losses = losses[-(steps + 1):]
 
-    return (last_n_losses[1:] <= last_n_losses[:-1]).all().item()
+    return (last_n_losses[1:] > last_n_losses[:-1]).all().item()
 
 # dataset collation
 
@@ -585,7 +585,7 @@ class Trainer(Module):
                     # take a random sample from eval dataset and store the audio and spectrogram results
 
                     rand_index = randrange(len(self.eval_dataset))
-                    eval_audio, *_ = self.eval_dataset[rand_index]
+                    eval_audio, eval_targets = self.eval_dataset[rand_index]
 
                     with torch.no_grad():
                         model.eval()
@@ -610,17 +610,22 @@ class Trainer(Module):
                     eval_audio_paths.append(('eval_audio', str(one_eval_result_folder / 'audio.mp3')))
                     eval_spec_img_paths.append(('eval_spec', str(one_eval_result_folder / 'spec.png')))
 
-                    for index, target_audio in enumerate(separated_audio):
+                    for index, (pred_target_audio, target_audio) in enumerate(zip(separated_audio, eval_targets)):
 
                         saved_audio_path = one_eval_result_folder / f'target.separated.{index}.mp3'
+                        pred_saved_audio_path = one_eval_result_folder / f'pred.target.separated.{index}.mp3'
+
                         saved_spectrogram_path = one_eval_result_folder / f'target.separated.spectrogram.{index}.png'
+                        pred_saved_spectrogram_path = one_eval_result_folder / f'pred.target.separated.spectrogram.{index}.png'
 
                         model.save_tensor_to_file(saved_audio_path, target_audio, overwrite = True)
+                        model.save_tensor_to_file(pred_saved_audio_path, pred_target_audio, overwrite = True)
 
                         model.save_spectrogram_figure(saved_spectrogram_path, target_audio, overwrite = True)
+                        model.save_spectrogram_figure(pred_saved_spectrogram_path, pred_target_audio, overwrite = True)
 
-                        eval_audio_paths.append((f'target_audio_{index}', str(saved_audio_path)))
-                        eval_spec_img_paths.append((f'target_spec_{index}', str(saved_spectrogram_path)))
+                        eval_audio_paths.append((f'target_audio_{index}', str(pred_saved_audio_path)))
+                        eval_spec_img_paths.append((f'target_spec_{index}', str(pred_saved_spectrogram_path)))
 
                     # log audio and spec images to wandb experiment if need be
 
@@ -665,7 +670,7 @@ class Trainer(Module):
                 # early stop if criteria met
 
                 if not_improved_last_n_steps(last_n_eval_losses, self.early_stop_steps):
-                    self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses}')
+                    self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses.tolist()}')
                     break
 
             if exceeds_max_step:
