@@ -1,12 +1,10 @@
 name: Pytest
 on: [push, pull_request]
-env:
-  DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
 
 jobs:
   build:
 
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -20,10 +18,7 @@ jobs:
         python -m pip install -e .[test]
     - name: Install ffmpeg
       run: |
-        brew install ffmpeg
-    - name: Install audio packages
-      run: |
-        brew install portaudio ffmpeg
+        apt install ffmpeg
     - name: Test with pytest
       run: |
         python -m pytest tests/
