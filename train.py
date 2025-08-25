@@ -1,7 +1,7 @@
 # /// script
 # dependencies = [
 #   "fire",
-#   "HS-TasNet",
+#   "HS-TasNet>=0.2.1",
 #   "wandb"
 # ]
 # ///
@@ -14,7 +14,6 @@ import fire
 import musdb
 from hs_tasnet import HSTasNet, Trainer
 
-@fire.Fire
 def train(
     small = False,
     stereo = False,
@@ -70,4 +69,4 @@ def train(
 # --small for small model
 
 if __name__ == '__main__':
-    train()
+    fire.Fire(train)

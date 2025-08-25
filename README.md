@@ -110,6 +110,8 @@ Then
 $ uv run train.py --use-wandb
 ```
 
+To wipe the previous checkpoints and evaluated results, append `--clear-folders`
+
 ## Test
 
 ```shell
