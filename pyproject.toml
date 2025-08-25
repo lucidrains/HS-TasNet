@@ -1,6 +1,6 @@
 [project]
 name = "HS-TasNet"
-version = "0.2.0"
+version = "0.2.1"
 description = "HS TasNet"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -33,8 +33,9 @@ dependencies = [
     "musdb",
     "sounddevice",
     "soundfile",
-    "torch>=2.4,<=2.8",
+    "torch>=2.8",
     "torchaudio",
+    "torchcodec",
 ]
 
 [project.urls]

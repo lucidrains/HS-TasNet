@@ -7,6 +7,7 @@ from functools import partial, wraps
 import torchaudio
 from torchaudio import transforms as T
 from torchaudio.functional import resample
+from torchcodec.encoders import AudioEncoder
 
 import sounddevice as sd
 
@@ -349,7 +350,6 @@ class HSTasNet(Module):
         stft = T.Spectrogram(
             n_fft = self.n_fft,
             hop_length = self.hop_length,
-            return_complex = True,
             power = 2.
         )(audio)
 
@@ -393,7 +393,8 @@ class HSTasNet(Module):
         if audio_tensor.ndim == 1:
             audio_tensor = repeat(audio_tensor, 'n -> s n', s = 2 if self.stereo else 1)
 
-        torchaudio.save(str(output_file), audio_tensor.cpu(), sample_rate = self.sample_rate)
+        encoder = AudioEncoder(audio_tensor.cpu(), sample_rate = self.sample_rate)
+        encoder.to_file(str(output_file))
 
         if verbose:
             print(f'audio saved to {str(output_file)}')
