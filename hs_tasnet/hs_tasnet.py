@@ -14,7 +14,7 @@ import sounddevice as sd
 import torch
 import torch.nn.functional as F
 from torch.fft import irfft
-from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, hann_window
+from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, hann_window, view_as_complex, view_as_real
 from torch.nn import LSTM, GRU, ConvTranspose1d, Module, ModuleList
 
 from numpy import ndarray
@@ -40,6 +40,14 @@ import matplotlib.pyplot as plt
 
 LSTM = partial(LSTM, batch_first = True)
 GRU = partial(GRU, batch_first = True)
+
+(
+    view_as_real,
+    view_as_complex
+) = tuple(compiler.disable()(fn) for fn in (
+    view_as_real,
+    view_as_complex
+))
 
 # functions
 
