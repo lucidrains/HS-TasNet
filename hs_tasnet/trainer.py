@@ -362,6 +362,8 @@ class Trainer(Module):
 
         dataset = ConcatDataset(datasets)
 
+        assert len(dataset) > 0, 'your dataset is empty'
+
         # maybe split dataset for eval
 
         need_split_train_dataset = random_split_dataset_for_eval_frac > 0
