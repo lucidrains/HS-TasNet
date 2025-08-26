@@ -34,16 +34,12 @@ from hs_tasnet import HSTasNet, Trainer
 
 model = HSTasNet()
 
-# the musdb dataset
-
-import musdb
-mus = musdb.DB(download = True)
-
 # trainer
 
 trainer = Trainer(
     model,
-    dataset = mus,
+    dataset = None,               # add your in-house Dataset
+    concat_musdb_dataset = True,  # concat the musdb dataset automatically
     batch_size = 2,
     max_steps = 2,
     cpu = True,
