@@ -4,12 +4,14 @@ from functools import partial
 from random import random, randrange
 from pathlib import Path
 
+import musdb
+
 import torch
 from torch import cat, stack, tensor
 from torch.nn import Module
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, ConcatDataset, random_split
 from torch.nn.utils.rnn import pad_sequence
 
 import numpy as np
@@ -264,7 +266,10 @@ class Trainer(Module):
     def __init__(
         self,
         model: HSTasNet,
-        dataset: Dataset | MusDB,
+        dataset: Dataset | MusDB | None = None,
+        concat_musdb_dataset = False,
+        use_full_musdb_dataset = False,
+        full_musdb_dataset_root = './data/musdb',
         eval_dataset: Dataset | None = None,
         random_split_dataset_for_eval_frac = 0., # if set higher than 0., will split off this fraction of the training dataset for evaluation - eval_dataset must be None
         optim_klass = Adam,
@@ -333,11 +338,29 @@ class Trainer(Module):
             **optimizer_kwargs
         )
 
+        # take care of datasets
+        # in the paper they use MusDB supplemented with own in-house dataset
+        # we will allow for automatic concatenation of MusDB (sample or full), or by itself if no dataset were given
+
+        datasets = []
+
+        if concat_musdb_dataset:
+            # concat the musdb dataset if need be
+
+            if use_full_musdb_dataset:
+                musdb_kwargs = dict(root = full_musdb_dataset_root)
+            else:
+                musdb_kwargs = dict(download = True)
+
+            musdb_dataset = musdb.DB(**musdb_kwargs)
+
+            datasets.append(musdb_dataset)
+
         # dataset
 
-        if isinstance(dataset, MusDB):
-            # give musdb special treatment
-            dataset = MusDBDataset(dataset)
+        datasets = [MusDBDataset(ds) if isinstance(ds, MusDB) else ds for ds in datasets] # wrap with musdb dataset to convert to (<audio>, <target>) pairs of right shape
+
+        dataset = ConcatDataset(datasets)
 
         # maybe split dataset for eval
 

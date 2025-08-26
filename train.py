@@ -26,8 +26,8 @@ def train(
     split_dataset_for_eval = True,
     split_dataset_eval_frac = 0.05,
     clear_folders = False,
-    full_train_dataset = False,
-    full_train_dataset_root = "./full-musdb-dataset"
+    use_full_musdb_dataset = False,
+    full_musdb_dataset_root = "./full-musdb-dataset"
 ):
 
     model = HSTasNet(
@@ -35,22 +35,16 @@ def train(
         stereo = stereo
     )
 
-    # the musdb dataset
-
-    if full_train_dataset:
-        musdb_kwargs = dict(root = full_train_dataset_root)
-    else:
-        musdb_kwargs = dict(download = True)
-
-    mus = musdb.DB(**musdb_kwargs)
-
     # trainer
 
     from hs_tasnet import Trainer
 
     trainer = Trainer(
         model,
-        dataset = mus,
+        dataset = None,                                     # add your own
+        concat_musdb_dataset = True,                        # whether to concat the musdb dataset
+        use_full_musdb_dataset = use_full_musdb_dataset,    # whether to use sample musdb or full
+        full_musdb_dataset_root = full_musdb_dataset_root,
         batch_size = batch_size,
         max_steps = max_steps,
         max_epochs = max_epochs,

@@ -1,5 +1,6 @@
 tests/test-out.mp3
 wandb/
+data/
 eval-results/
 checkpoints/
 
