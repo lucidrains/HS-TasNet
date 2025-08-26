@@ -344,6 +344,9 @@ class Trainer(Module):
 
         datasets = []
 
+        if exists(datasets):
+            datasets.append(dataset)
+
         if concat_musdb_dataset:
             # concat the musdb dataset if need be
 
@@ -360,9 +363,9 @@ class Trainer(Module):
 
         datasets = [MusDBDataset(ds) if isinstance(ds, MusDB) else ds for ds in datasets] # wrap with musdb dataset to convert to (<audio>, <target>) pairs of right shape
 
-        dataset = ConcatDataset(datasets)
+        all_dataset = ConcatDataset(datasets)
 
-        assert len(dataset) > 0, 'your dataset is empty'
+        assert len(all_dataset) > 0, 'your dataset is empty'
 
         # maybe split dataset for eval
 
@@ -370,9 +373,11 @@ class Trainer(Module):
         assert not (need_split_train_dataset and exists(eval_dataset)), f'`eval_dataset` must not be passed in if `random_split_dataset_for_eval_frac` set greater than 0.'
 
         if not exists(eval_dataset) and need_split_train_dataset:
-            train_size = int((1. - random_split_dataset_for_eval_frac) * len(dataset))
+            train_size = int((1. - random_split_dataset_for_eval_frac) * len(all_dataset))
             eval_size = len(dataset) - train_size
-            dataset, eval_dataset = random_split(dataset, (train_size, eval_size))
+            train_dataset, eval_dataset = random_split(all_dataset, (train_size, eval_size))
+        else:
+            train_dataset = all_dataset
 
         # print
 
@@ -380,7 +385,7 @@ class Trainer(Module):
 
         # torch from this point on
 
-        dataset = CastTorch(dataset, device = device)
+        train_dataset = CastTorch(train_dataset, device = device)
 
         if exists(eval_dataset):
             eval_dataset = CastTorch(eval_dataset, device = device)
@@ -388,16 +393,16 @@ class Trainer(Module):
         # handle model is not stereo but data is stereo
 
         if not self.model_is_stereo:
-            dataset = StereoToMonoDataset(dataset)
+            train_dataset = StereoToMonoDataset(train_dataset)
 
             if exists(eval_dataset):
                 eval_dataset = StereoToMonoDataset(eval_dataset)
 
         # augmentations
-        # only for training `dataset`
+        # only for training `train_dataset`
 
         if augment_gain:
-            dataset = GainAugmentation(dataset)
+            train_dataset = GainAugmentation(train_dataset)
 
         collate_fn = default_collate_fn
 
@@ -406,7 +411,7 @@ class Trainer(Module):
 
         # dataloader
 
-        dataloader = DataLoader(dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
+        dataloader = DataLoader(train_dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
 
         eval_dataloader = None
 
