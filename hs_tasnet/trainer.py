@@ -4,6 +4,8 @@ from functools import partial
 from random import random, randrange
 from pathlib import Path
 
+import torchaudio
+
 import musdb
 
 import torch
@@ -81,6 +83,60 @@ def default_collate_fn(
     return audios, targets, tensor(audio_lens, device = audios.device)
 
 # dataset related
+
+# musdb18hq dataset wrapper
+
+class MusDB18HQ(Dataset):
+    def __init__(
+        self,
+        dataset_path: str | Path,
+        sep_filenames = ('drums', 'bass', 'vocals', 'other')
+    ):
+        if isinstance(dataset_path, str):
+            dataset_path = Path(dataset_path)
+
+        paths = []
+        mixture_paths = dataset_path.glob('**/*/mixture.wav')
+
+        # go through all the found paths to mixture.wav
+        # and make sure the separated wav files all exist
+
+        for mixture_path in mixture_paths:
+            parent_path = mixture_path.parent
+
+            if not all([(parent_path / f'{sep_filename}.wav').exists() for sep_filename in sep_filenames]):
+                continue
+
+            paths.append(parent_path)
+
+        self.paths = paths
+        self.sep_filenames = sep_filenames
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, idx):
+        path = self.paths[idx]
+
+        mixture_path = path / 'mixture.wav'
+
+        # get mixture as 'audio'
+
+        audio, _ = torchaudio.load(str(mixture_path))
+
+        # get all separated audio with filenames as defined by `sep_filenames`
+
+        target_tensors = []
+        for sep_filename in self.sep_filenames:
+            sep_path = path / f'{sep_filename}.wav'
+            target, _ = torchaudio.load(str(sep_path))
+            target_tensors.append(target)
+
+        targets = stack(target_tensors)
+
+        # return
+
+        return audio, targets
 
 # wrap the musdb MultiTrack if detected
 

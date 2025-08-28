@@ -3,5 +3,6 @@ from hs_tasnet.hs_tasnet import (
 )
 
 from hs_tasnet.trainer import (
-    Trainer
+    Trainer,
+    MusDB18HQ
 )
