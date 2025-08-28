@@ -75,7 +75,7 @@ model = HSTasNet.init_and_load_from('./checkpoints/path.to.desired.ckpt.pt')
 First make sure dependencies are there by running
 
 ```shell
-$ sh install.sh
+$ sh scripts/install.sh
 ```
 
 Then make sure `uv` is installed
