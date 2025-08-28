@@ -344,7 +344,7 @@ class Trainer(Module):
 
         datasets = []
 
-        if exists(datasets):
+        if exists(dataset):
             datasets.append(dataset)
 
         if concat_musdb_dataset:
@@ -374,14 +374,14 @@ class Trainer(Module):
 
         if not exists(eval_dataset) and need_split_train_dataset:
             train_size = int((1. - random_split_dataset_for_eval_frac) * len(all_dataset))
-            eval_size = len(dataset) - train_size
+            eval_size = len(all_dataset) - train_size
             train_dataset, eval_dataset = random_split(all_dataset, (train_size, eval_size))
         else:
             train_dataset = all_dataset
 
         # print
 
-        self.print(f'\ntraining on dataset of {len(dataset)} samples')
+        self.print(f'\ntraining on dataset of {len(train_dataset)} samples')
 
         # torch from this point on
 
