@@ -144,13 +144,15 @@ class MusDB18HQ(Dataset):
 
         audio_length = audio.shape[-1]
 
-        if exists(self.max_audio_length_seconds) and audio_length > self.max_audio_length:
-            max_samples = self.max_audio_length_seconds * sample_rate
+        if exists(self.max_audio_length_seconds):
+            max_length = self.max_audio_length_seconds * sample_rate
 
-            start_index = randrange(audio_length - max_samples)
+            if audio_length > max_length:
 
-            audio = audio[..., start_index:(start_index + max_samples)]
-            targets = targets[..., start_index:(start_index + max_samples)]
+                start_index = randrange(audio_length - max_length)
+
+                audio = audio[..., start_index:(start_index + max_length)]
+                targets = targets[..., start_index:(start_index + max_length)]
 
         # return
 
@@ -218,6 +220,31 @@ class StereoToMonoDataset(Dataset):
 
         if targets.ndim == 3:
             targets = reduce(targets, 't s n -> t n', 'mean')
+
+        return audio, targets
+
+class MaxSamples(Dataset):
+    def __init__(self, dataset: Dataset, max_samples):
+        self.dataset = dataset
+        self.max_samples = max_samples
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        audio, targets = self.dataset[idx]
+
+        audio_length = audio.shape[-1]
+        max_length = self.max_samples
+
+        if audio_length <= max_length:
+            return audio, targets
+
+        start_index_range = audio_length - max_length
+        start_index = randrange(start_index_range)
+
+        audio = audio[..., start_index:(start_index + max_length)]
+        targets = targets[..., start_index:(start_index + max_length)]
 
         return audio, targets
 
@@ -350,6 +377,7 @@ class Trainer(Module):
         use_full_musdb_dataset = False,
         full_musdb_dataset_root = './data/musdb',
         eval_dataset: Dataset | MusDB | None = None,
+        dataset_max_seconds = None,
         random_split_dataset_for_eval_frac = 0., # if set higher than 0., will split off this fraction of the training dataset for evaluation - eval_dataset must be None
         optim_klass = Adam,
         batch_size = 128,
@@ -499,6 +527,15 @@ class Trainer(Module):
 
         if augment_remix:
             collate_fn = compose(collate_fn, partial(augment_remix_fn, frac_augment = augment_remix_frac))
+
+        # random sample segments if `dataset_max_seconds` is set
+
+        if exists(dataset_max_seconds):
+            max_samples = self.sample_rate * dataset_max_seconds
+            train_dataset = MaxSamples(train_dataset, max_samples)
+
+            if exists(eval_dataset):
+                eval_dataset = MaxSamples(eval_dataset, max_samples)
 
         # dataloader
 
