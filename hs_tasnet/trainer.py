@@ -337,11 +337,16 @@ class Trainer(Module):
     def __init__(
         self,
         model: HSTasNet,
-        dataset: Dataset | MusDB | None = None,
+        dataset: (
+            Dataset |
+            list[Dataset | MusDB]
+            | MusDB
+            | None
+        ) = None,
         concat_musdb_dataset = False,
         use_full_musdb_dataset = False,
         full_musdb_dataset_root = './data/musdb',
-        eval_dataset: Dataset | None = None,
+        eval_dataset: Dataset | MusDB | None = None,
         random_split_dataset_for_eval_frac = 0., # if set higher than 0., will split off this fraction of the training dataset for evaluation - eval_dataset must be None
         optim_klass = Adam,
         batch_size = 128,
@@ -416,7 +421,14 @@ class Trainer(Module):
         datasets = []
 
         if exists(dataset):
-            datasets.append(dataset)
+
+            # `dataset` can be a list already to be concatted together
+            # or just append to datasets list above
+
+            if isinstance(dataset, list):
+                datasets = dataset
+            else:
+                datasets.append(dataset)
 
         if concat_musdb_dataset:
             # concat the musdb dataset if need be
@@ -430,9 +442,14 @@ class Trainer(Module):
 
             datasets.append(musdb_dataset)
 
-        # dataset
+        # convert MusDB dataset with wrapper if needed
 
         datasets = [MusDBDataset(ds) if isinstance(ds, MusDB) else ds for ds in datasets] # wrap with musdb dataset to convert to (<audio>, <target>) pairs of right shape
+
+        if isinstance(eval_dataset, MusDB):
+            eval_dataset = MusDBDataset(eval_dataset)
+
+        # concat datasets
 
         all_dataset = ConcatDataset(datasets)
 

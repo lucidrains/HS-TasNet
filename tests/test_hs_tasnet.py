@@ -57,9 +57,11 @@ def test_model(
 
 @param('with_eval', (False, True))
 @param('with_ema', (False, True))
+@param('list_dataset', (False, True))
 def test_trainer(
     with_eval,
-    with_ema
+    with_ema,
+    list_dataset
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
     from hs_tasnet.trainer import Trainer
@@ -86,9 +88,14 @@ def test_trainer(
             targets = torch.rand(4, 1024 * 10)
             return audio, targets
 
+    if list_dataset:
+        dataset = [MusicSepDataset(), MusicSepDataset()]
+    else:
+        dataset = MusicSepDataset()
+
     trainer = Trainer(
         model,
-        dataset = MusicSepDataset(),
+        dataset = dataset,
         eval_dataset = EvalMusicSepDataset() if with_eval else None,
         batch_size = 4,
         max_epochs = 3,
