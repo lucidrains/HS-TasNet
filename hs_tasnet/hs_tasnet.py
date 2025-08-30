@@ -436,8 +436,7 @@ class HSTasNet(Module):
 
         config = pickle.loads(pkg['config'])
         model = cls(**config)
-
-        self.load(model, path, strict = strict)
+        model.load_state_dict(pkg['model'], strict = strict)
         return model
 
     # returns a function that closures the hiddens and past audio chunk for integration with sounddevice audio callback
