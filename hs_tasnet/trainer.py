@@ -91,7 +91,7 @@ class MusDB18HQ(Dataset):
         self,
         dataset_path: str | Path,
         sep_filenames = ('drums', 'bass', 'vocals', 'other'),
-        max_audio_length = None
+        max_audio_length_seconds = None
     ):
         if isinstance(dataset_path, str):
             dataset_path = Path(dataset_path)
@@ -113,8 +113,10 @@ class MusDB18HQ(Dataset):
         self.paths = paths
         self.sep_filenames = sep_filenames
 
-        # if the max_audio_length is set, will randomly sample a segment from the audio
-        self.max_audio_length = max_audio_length
+        # if the max_audio_length_seconds is set, will randomly sample a segment from the audio
+
+        assert max_audio_length_seconds > 0
+        self.max_audio_length_seconds = max_audio_length_seconds
 
     def __len__(self):
         return len(self.paths)
@@ -126,7 +128,7 @@ class MusDB18HQ(Dataset):
 
         # get mixture as 'audio'
 
-        audio, _ = torchaudio.load(str(mixture_path))
+        audio, sample_rate = torchaudio.load(str(mixture_path))
 
         # get all separated audio with filenames as defined by `sep_filenames`
 
@@ -142,12 +144,13 @@ class MusDB18HQ(Dataset):
 
         audio_length = audio.shape[-1]
 
-        if exists(self.max_audio_length) and audio_length > self.max_audio_length:
-            max_len = self.max_audio_length
-            start_index = randrange(audio_length - max_len)
+        if exists(self.max_audio_length_seconds) and audio_length > self.max_audio_length:
+            max_samples = self.max_audio_length_seconds * sample_rate
 
-            audio = audio[..., start_index:(start_index + max_len)]
-            targets = targets[..., start_index:(start_index + max_len)]
+            start_index = randrange(audio_length - max_samples)
+
+            audio = audio[..., start_index:(start_index + max_samples)]
+            targets = targets[..., start_index:(start_index + max_samples)]
 
         # return
 
