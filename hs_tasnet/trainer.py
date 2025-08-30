@@ -664,6 +664,16 @@ class Trainer(Module):
         exceeds_max_step = False
         past_eval_losses = [] # for learning rate decay and early stopping detection
 
+        # the function for saving checkpoints
+
+        def save_checkpoints(checkpoint_index):
+            self.unwrapped_model.save(self.checkpoint_folder / f'hs-tasnet.ckpt.{checkpoint_index}.pt')
+
+            if self.use_ema:
+                self.ema_model.ema_model.save(self.checkpoint_folder /f'hs_tasnet.ema.ckpt.{checkpoint_index}.pt') # save ema
+
+        # go through all epochs
+
         for epoch in range(1, self.max_epochs + 1):
 
             self.model.train()
@@ -807,10 +817,8 @@ class Trainer(Module):
                 self.is_main
             ):
                 checkpoint_index = epoch // self.checkpoint_every
-                self.unwrapped_model.save(self.checkpoint_folder / f'hs-tasnet.ckpt.{checkpoint_index}.pt')
 
-                if self.use_ema:
-                    self.ema_model.ema_model.save(self.checkpoint_folder /f'hs_tasnet.ema.ckpt.{checkpoint_index}.pt') # save ema
+                save_checkpoints(checkpoint_index)
 
             # determine lr decay and early stopping based on eval
 
@@ -835,6 +843,8 @@ class Trainer(Module):
                 break
 
         # cleanup accelerator
+
+        save_checkpoints(-1) # save one last time with checkpoint index -1
 
         self.accelerator.end_training()
 
