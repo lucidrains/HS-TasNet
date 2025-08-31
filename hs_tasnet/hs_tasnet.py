@@ -659,6 +659,7 @@ class HSTasNet(Module):
         return_reduced_sources: list[int] | None = None,
         auto_causal_pad = None,
         auto_curtail_length_to_multiple = True,
+        return_unreduced_loss = False
     ):
         auto_causal_pad = default(auto_causal_pad, self.training)
 
@@ -841,7 +842,7 @@ class HSTasNet(Module):
             recon_audio = recon_audio[..., self.causal_pad:]
 
         if exists(targets):
-            recon_loss = F.l1_loss(recon_audio, targets, reduction = 'none' if need_audio_mask else 'mean') # they claim a simple l1 loss is better than all the complicated stuff of past
+            recon_loss = F.l1_loss(recon_audio, targets, reduction = 'none' if need_audio_mask or return_unreduced_loss else 'mean') # they claim a simple l1 loss is better than all the complicated stuff of past
 
             if need_audio_mask:
                 recon_loss = rearrange(recon_loss, 'b ... n -> b n ...')
