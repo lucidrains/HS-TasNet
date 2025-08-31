@@ -764,11 +764,11 @@ class Trainer(Module):
 
                         # handle stereo
 
-                        eval_targets_for_sdr, pred_targets_for_sdr = tuple(rearrange(t.cpu().numpy(), '... n -> (...) n') for t in (eval_targets, pred_targets))
+                        eval_targets_for_sdr, pred_targets_for_sdr = tuple(rearrange(t, 'b t ... n -> (b ...) t n') for t in (eval_targets, pred_targets))
 
                         for eval_target_for_sdr, pred_target_for_sdr in zip(eval_targets_for_sdr, pred_targets_for_sdr):
                             sdr, *_ = bss_eval_sources(eval_target_for_sdr, pred_target_for_sdr)
-                            eval_sdr.append(from_numpy(sdr))
+                            eval_sdr.append(sdr)
 
                 avg_eval_loss = stack(eval_losses).mean()
                 avg_eval_loss = acc.gather_for_metrics(avg_eval_loss).mean()
