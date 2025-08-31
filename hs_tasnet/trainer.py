@@ -30,7 +30,7 @@ from einops import rearrange, reduce
 
 from musdb import DB as MusDB
 
-from mir_eval.separation import bss_eval_sources
+from fast_bss_eval import bss_eval_sources
 
 # constants
 
