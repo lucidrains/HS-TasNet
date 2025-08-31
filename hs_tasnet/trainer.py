@@ -395,6 +395,7 @@ class Trainer(Module):
         ema_kwargs: dict = dict(),
         checkpoint_every = 1,
         checkpoint_folder = './checkpoints',
+        eval_sdr = False,
         eval_results_folder = './eval-results',
         decay_lr_factor = 0.5,
         decay_lr_if_not_improved_steps = 3,    # decay learning rate if validation loss does not improve for this amount of epochs
@@ -406,7 +407,7 @@ class Trainer(Module):
         augment_gain = True,
         augment_channel_swap = True,
         augment_remix = True,
-        augment_remix_frac = 0.5
+        augment_remix_frac = 0.5,
     ):
         super().__init__()
 
@@ -556,6 +557,10 @@ class Trainer(Module):
         eval_results_folder.mkdir(parents = True, exist_ok = True)
 
         self.eval_results_folder = eval_results_folder
+
+        # evaluate sdr
+
+        self.eval_sdr = eval_sdr
 
         # maybe experiment tracker
 
@@ -749,6 +754,9 @@ class Trainer(Module):
 
                         eval_losses.append(eval_loss)
 
+                        if not self.eval_sdr:
+                            continue
+
                         # derive SDR, which i'm learning, much like FID, is imperfect measure, but a standard in the field
 
                         eval_len = pred_targets.shape[-1] # may have been auto curtailed
@@ -765,17 +773,21 @@ class Trainer(Module):
                 avg_eval_loss = stack(eval_losses).mean()
                 avg_eval_loss = acc.gather_for_metrics(avg_eval_loss).mean()
 
-                avg_eval_sdr = stack(eval_sdr).mean()
-                avg_eval_sdr = acc.gather_for_metrics(avg_eval_sdr).mean()
-
                 past_eval_losses.append(avg_eval_loss)
 
-                self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f} | eval average SDR: {avg_eval_sdr.item():.3f}')
+                self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
 
                 eval_logs = dict(
                     valid_loss = avg_eval_loss,
-                    avg_valid_sdr = avg_eval_sdr
                 )
+
+                if self.eval_sdr and len(eval_sdr) > 0:
+                    self.print(f'[{epoch}] eval average SDR: {avg_eval_sdr.item():.3f}')
+
+                    avg_eval_sdr = stack(eval_sdr).mean()
+                    avg_eval_sdr = acc.gather_for_metrics(avg_eval_sdr).mean()
+
+                    eval_logs.update(avg_valid_sdr = avg_eval_sdr)
 
                 if self.is_main:
                     model = self.unwrapped_model

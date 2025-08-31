@@ -59,11 +59,13 @@ def test_model(
 @param('with_ema', (False, True))
 @param('list_dataset', (False, True))
 @param('stereo', (False, True))
+@param('eval_sdr', (False, True))
 def test_trainer(
     with_eval,
     with_ema,
     list_dataset,
-    stereo
+    stereo,
+    eval_sdr
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
     from hs_tasnet.trainer import Trainer
@@ -105,7 +107,8 @@ def test_trainer(
         max_epochs = 3,
         checkpoint_every = 1,
         cpu = True,
-        use_ema = with_ema
+        use_ema = with_ema,
+        eval_sdr = eval_sdr
     )
 
     trainer.clear_folders()
