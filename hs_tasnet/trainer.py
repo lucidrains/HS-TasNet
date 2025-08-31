@@ -782,10 +782,11 @@ class Trainer(Module):
                 )
 
                 if self.eval_sdr and len(eval_sdr) > 0:
-                    self.print(f'[{epoch}] eval average SDR: {avg_eval_sdr.item():.3f}')
 
                     avg_eval_sdr = stack(eval_sdr).mean()
                     avg_eval_sdr = acc.gather_for_metrics(avg_eval_sdr).mean()
+
+                    self.print(f'[{epoch}] eval average SDR: {avg_eval_sdr.item():.3f}')
 
                     eval_logs.update(avg_valid_sdr = avg_eval_sdr)
 
