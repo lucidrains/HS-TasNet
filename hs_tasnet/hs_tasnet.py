@@ -659,7 +659,8 @@ class HSTasNet(Module):
         return_reduced_sources: list[int] | None = None,
         auto_causal_pad = None,
         auto_curtail_length_to_multiple = True,
-        return_unreduced_loss = False
+        return_unreduced_loss = False,
+        return_targets_with_loss = False
     ):
         auto_causal_pad = default(auto_causal_pad, self.training)
 
@@ -848,7 +849,10 @@ class HSTasNet(Module):
                 recon_loss = rearrange(recon_loss, 'b ... n -> b n ...')
                 recon_loss = recon_loss[audio_mask].mean()
 
-            return recon_loss
+            if not return_targets_with_loss:
+                return recon_loss
+
+            return recon_loss, targets
 
         # outputs
 
