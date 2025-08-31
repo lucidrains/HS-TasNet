@@ -754,8 +754,12 @@ class Trainer(Module):
                         eval_len = pred_targets.shape[-1] # may have been auto curtailed
                         eval_targets = eval_targets[..., :eval_len]
 
-                        for eval_target, pred_target in zip(eval_targets, pred_targets):
-                            sdr, *_ = bss_eval_sources(eval_target.cpu().numpy(), pred_target.cpu().numpy())
+                        # handle stereo
+
+                        eval_targets_for_sdr, pred_targets_for_sdr = tuple(rearrange(t.cpu().numpy(), '... n -> (...) n') for t in (eval_targets, pred_targets))
+
+                        for eval_target_for_sdr, pred_target_for_sdr in zip(eval_targets_for_sdr, pred_targets_for_sdr):
+                            sdr, *_ = bss_eval_sources(eval_target_for_sdr, pred_target_for_sdr)
                             eval_sdr.append(from_numpy(sdr))
 
                 avg_eval_loss = stack(eval_losses).mean()
@@ -784,9 +788,9 @@ class Trainer(Module):
                     with torch.no_grad():
                         model.eval()
 
-                        eval_audio = rearrange(eval_audio, '... -> 1 ...')
-                        separated_audio, _ = model(eval_audio)
-                        separated_audio = rearrange(separated_audio, '1 ... -> ...')
+                        batched_eval_audio = rearrange(eval_audio, '... -> 1 ...')
+                        batched_separated_audio, _ = model(batched_eval_audio)
+                        separated_audio = rearrange(batched_separated_audio, '1 ... -> ...')
 
                     # make sure folder exists - each evaluation epoch gets a folder for separated audio and spec
 

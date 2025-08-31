@@ -58,25 +58,29 @@ def test_model(
 @param('with_eval', (False, True))
 @param('with_ema', (False, True))
 @param('list_dataset', (False, True))
+@param('stereo', (False, True))
 def test_trainer(
     with_eval,
     with_ema,
-    list_dataset
+    list_dataset,
+    stereo
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
     from hs_tasnet.trainer import Trainer
 
     from torch.utils.data import Dataset
 
-    model = HSTasNet(small = True, stereo = False)
+    model = HSTasNet(small = True, stereo = stereo)
+
+    stereo_dims = (2,) if stereo else ()
 
     class MusicSepDataset(Dataset):
         def __len__(self):
             return 20
 
         def __getitem__(self, idx):
-            audio = torch.randn(1024 * 10)
-            targets = torch.rand(4, 1024 * 10)
+            audio = torch.randn(*stereo_dims, 1024 * 10)
+            targets = torch.rand(4, *stereo_dims, 1024 * 10)
             return audio, targets
 
     class EvalMusicSepDataset(Dataset):
@@ -84,8 +88,8 @@ def test_trainer(
             return 5
 
         def __getitem__(self, idx):
-            audio = torch.randn(1024 * 10)
-            targets = torch.rand(4, 1024 * 10)
+            audio = torch.randn(*stereo_dims, 1024 * 10)
+            targets = torch.rand(4, *stereo_dims, 1024 * 10)
             return audio, targets
 
     if list_dataset:
