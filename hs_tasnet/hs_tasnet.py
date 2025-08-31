@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import pickle
 from pathlib import Path
 from functools import partial, wraps
@@ -10,6 +12,8 @@ from torchaudio.functional import resample
 from torchcodec.encoders import AudioEncoder
 
 import sounddevice as sd
+
+from loguru import logger
 
 import torch
 import torch.nn.functional as F
@@ -66,12 +70,37 @@ def identity(t):
 def is_empty(t: Tensor):
     return t.numel() == 0
 
+def current_time_ms():
+    return time.time() * 1000
+
 def round_down_to_multiple(num, mult):
     return (num // mult) * mult
 
 def lens_to_mask(lens: Tensor, max_len):
     seq = torch.arange(max_len, device = lens.device)
     return einx.greater('b, n -> b n', lens, seq)
+
+# measure latency
+
+def decorate_print_latency(log_prefix = None):
+    def inner(fn):
+        @wraps(fn)
+        def decorated(*args, **kwargs):
+
+            start_time = current_time_ms()
+            out = fn(*args, **kwargs)
+            elapsed_ms = current_time_ms() - start_time
+
+            latency_msg = f'{int(elapsed_ms):.2f} ms'
+
+            if exists(log_prefix):
+                latency_msg = f'{log_prefix} {latency_msg}'
+
+            logger.debug(latency_msg)
+            return out
+
+        return decorated
+    return inner
 
 # residual
 
@@ -445,7 +474,8 @@ class HSTasNet(Module):
         self,
         device = None,
         return_reduced_sources: list[int] | None = None,
-        auto_convert_to_stereo = True
+        auto_convert_to_stereo = True,
+        print_latency = False
     ):
         chunk_len = self.overlap_len
         self.eval()
@@ -502,6 +532,11 @@ class HSTasNet(Module):
 
             return transformed[..., -chunk_len:]
 
+        # print latency if needed
+
+        if print_latency:
+            fn = decorate_print_latency('stream chunk')(fn)
+
         return fn
 
     def sounddevice_stream(
@@ -511,6 +546,7 @@ class HSTasNet(Module):
         channels = None,
         device = None,
         auto_convert_to_stereo = True,
+        print_latency = False,
         **stream_kwargs
     ):
         assert len(return_reduced_sources) > 0
@@ -518,7 +554,8 @@ class HSTasNet(Module):
         transform_fn = self.init_stateful_transform_fn(
             return_reduced_sources = return_reduced_sources,
             device = device,
-            auto_convert_to_stereo = auto_convert_to_stereo
+            auto_convert_to_stereo = auto_convert_to_stereo,
+            print_latency = print_latency
         )
 
         # sounddevice stream callback, where raw audio can be transformed

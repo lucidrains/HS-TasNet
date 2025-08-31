@@ -1,6 +1,6 @@
 [project]
 name = "HS-TasNet"
-version = "0.2.17"
+version = "0.2.19"
 description = "HS TasNet"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -29,6 +29,7 @@ dependencies = [
     "einops>=0.8.1",
     "ema-pytorch",
     "librosa",
+    "loguru",
     "matplotlib",
     "musdb",
     "sounddevice",

@@ -115,7 +115,7 @@ class MusDB18HQ(Dataset):
 
         # if the max_audio_length_seconds is set, will randomly sample a segment from the audio
 
-        assert max_audio_length_seconds > 0
+        assert not exists(max_audio_length_seconds) or max_audio_length_seconds > 0
         self.max_audio_length_seconds = max_audio_length_seconds
 
     def __len__(self):
