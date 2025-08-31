@@ -9,7 +9,7 @@ import torchaudio
 import musdb
 
 import torch
-from torch import cat, stack, tensor
+from torch import cat, stack, tensor, from_numpy
 from torch.nn import Module
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
@@ -196,10 +196,10 @@ class CastTorch(Dataset):
         audio, targets = self.dataset[idx]
 
         if isinstance(audio, np.ndarray):
-            audio = torch.from_numpy(audio)
+            audio = from_numpy(audio)
 
         if isinstance(targets, np.ndarray):
-            targets = torch.from_numpy(targets)
+            targets = from_numpy(targets)
 
         if exists(self.device):
             audio = audio.to(self.device)
@@ -661,6 +661,8 @@ class Trainer(Module):
 
     def forward(self):
 
+        acc = self.accelerator
+
         self.print(f'\nstarting training for HSTasNet with {self.unwrapped_model.num_parameters} params\n')
 
         exceeds_max_step = False
@@ -684,7 +686,7 @@ class Trainer(Module):
 
             for audio, targets, audio_lens in self.dataloader:
 
-                with self.accelerator.accumulate(self.model):
+                with acc.accumulate(self.model):
                     loss = self.model(
                         audio,
                         targets = targets,
@@ -692,7 +694,7 @@ class Trainer(Module):
                         auto_curtail_length_to_multiple = True
                     )
 
-                    self.accelerator.backward(loss)
+                    acc.backward(loss)
 
                     self.print(f'[{epoch}] loss: {loss.item():.3f}')
 
@@ -728,26 +730,48 @@ class Trainer(Module):
                 avg_eval_loss = self.zero
 
                 eval_losses = []
+                eval_sdr = []
+
                 for eval_audio, eval_targets, eval_audio_lens in self.eval_dataloader:
 
                     with torch.no_grad():
                         self.model.eval()
 
-                        eval_loss = self.model(
+                        eval_loss, pred_targets = self.model(
                             eval_audio,
                             targets = eval_targets,
                             audio_lens = eval_audio_lens,
-                            auto_curtail_length_to_multiple = True
+                            auto_curtail_length_to_multiple = True,
+                            return_targets_with_loss = True
                         )
+
+                        # store losses - need it for learning rate decay and early stopping logic
 
                         eval_losses.append(eval_loss)
 
+                        # derive SDR, which i'm learning, much like FID, is imperfect measure, but a standard in the field
+
+                        eval_len = pred_targets.shape[-1] # may have been auto curtailed
+                        eval_targets = eval_targets[..., :eval_len]
+
+                        for eval_target, pred_target in zip(eval_targets, pred_targets):
+                            sdr, *_ = bss_eval_sources(eval_target.cpu().numpy(), pred_target.cpu().numpy())
+                            eval_sdr.append(from_numpy(sdr))
+
                 avg_eval_loss = stack(eval_losses).mean()
+                avg_eval_loss = acc.gather_for_metrics(avg_eval_loss).mean()
+
+                avg_eval_sdr = stack(eval_sdr).mean()
+                avg_eval_sdr = acc.gather_for_metrics(avg_eval_sdr).mean()
+
                 past_eval_losses.append(avg_eval_loss)
 
-                self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f}')
+                self.print(f'[{epoch}] eval loss: {avg_eval_loss.item():.3f} | eval average SDR: {avg_eval_sdr.item():.3f}')
 
-                eval_logs = dict(valid_loss = avg_eval_loss)
+                eval_logs = dict(
+                    valid_loss = avg_eval_loss,
+                    avg_valid_sdr = avg_eval_sdr
+                )
 
                 if self.is_main:
                     model = self.unwrapped_model
@@ -848,6 +872,6 @@ class Trainer(Module):
 
         save_checkpoints(-1) # save one last time with checkpoint index -1
 
-        self.accelerator.end_training()
+        acc.end_training()
 
         self.print(f'training complete')
