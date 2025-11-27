@@ -365,7 +365,8 @@ class ChannelSwapAugmentation(Dataset):
 
 def augment_remix_fn(
     inp: tuple[Tensor, Tensor, Tensor],
-    frac_augment = 0.5
+    frac_augment = 0.5,
+    keep_batch_size_same = True
 ):
     """
     this is the effective augmentation used in the separation field that generates synthetic data by combining different tracks across different sources
@@ -395,11 +396,16 @@ def augment_remix_fn(
     remixed_audio = reduce(remixed_targets, 'b t ... -> b ...', 'sum')
     remixed_audio_lens = reduce(audio_lens[batch_randperm], 'b t -> b', 'min')
 
+    # whether to keep batch size the same
+
+    if keep_batch_size_same:
+        audio, targets, audio_lens = tuple(t[:-num_augment] for t in (audio, targets, audio_lens))
+
     # concat onto the input
 
-    audio = cat((audio[-num_augment:], remixed_audio))
-    targets = cat((targets[-num_augment:], remixed_targets))
-    audio_lens = cat((audio_lens[-num_augment:], remixed_audio_lens))
+    audio = cat((audio, remixed_audio))
+    targets = cat((targets, remixed_targets))
+    audio_lens = cat((audio_lens, remixed_audio_lens))
 
     return audio, targets, audio_lens
 
@@ -449,6 +455,7 @@ class Trainer(Module):
         augment_channel_swap = True,
         augment_remix = True,
         augment_remix_frac = 0.5,
+        augment_remix_keep_batch_size_same = False
     ):
         super().__init__()
 
@@ -570,7 +577,10 @@ class Trainer(Module):
         collate_fn = default_collate_fn
 
         if augment_remix:
-            collate_fn = compose(collate_fn, partial(augment_remix_fn, frac_augment = augment_remix_frac))
+            collate_fn = compose(collate_fn, partial(augment_remix_fn, frac_augment = augment_remix_frac, keep_batch_size_same = augment_remix_keep_batch_size_same))
+
+            if not keep_batch_size_same:
+                self.print(f'given remix augmentation of {augment_remix_frac}, your effective batch size is {batch_size + int(batch_size * augment_remix_frac)}')
 
         # random sample segments if `dataset_max_seconds` is set
 
