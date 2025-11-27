@@ -69,9 +69,10 @@ def not_improved_last_n_steps(losses, steps):
     if len(losses) <= steps:
         return False
 
-    last_n_losses = losses[-(steps + 1):]
+    best_loss = losses.amin()
+    last_n_losses = losses[-steps:]
 
-    return (last_n_losses[1:] > last_n_losses[:-1]).all().item()
+    return (last_n_losses > best_loss).all().item()
 
 # sdr
 
@@ -84,6 +85,31 @@ def calculate_sdr(
     target_energy = torch.mean(target ** 2, dim = -1)
     distortion_energy = F.mse_loss(pred, target, reduction = 'none').mean(dim = -1)
     return 10 * torch.log10(target_energy.clamp(min = eps) / distortion_energy.clamp(min = eps))
+
+def calculate_si_sdr(
+    target: Tensor,
+    pred: Tensor,
+    eps = 1e-8
+):
+
+    target = target - reduce(target, '... d -> ... 1', 'mean')
+    pred = pred - reduce(pred, '... d -> ... 1', 'mean')
+
+    alpha = (
+        reduce(pred * target, '... d -> ... 1', 'sum') /
+        reduce(target ** 2, '... d -> ... 1', 'sum').clamp_min(eps)
+    )
+
+    target_scaled = alpha * target
+
+    noise = target_scaled - pred
+
+    val = (
+        reduce(target_scaled ** 2, '... d -> ...', 'sum') /
+        reduce(noise ** 2, '... d -> ...', 'sum').clamp_min(eps)
+    )
+
+    return 10 * torch.log10(val.clamp_min(eps))
 
 # dataset collation
 
@@ -410,6 +436,7 @@ class Trainer(Module):
         checkpoint_every = 1,
         checkpoint_folder = './checkpoints',
         eval_sdr = True,
+        eval_use_si_sdr = True, # use scale-invariant sdr (si-sdr)
         eval_results_folder = './eval-results',
         decay_lr_factor = 0.5,
         decay_lr_if_not_improved_steps = 3,    # decay learning rate if validation loss does not improve for this amount of epochs
@@ -575,6 +602,8 @@ class Trainer(Module):
         # evaluate sdr
 
         self.eval_sdr = eval_sdr
+
+        self.sdr_eval_fn = calculate_sdr if not eval_use_si_sdr else calculate_si_sdr
 
         # maybe experiment tracker
 
@@ -780,9 +809,9 @@ class Trainer(Module):
 
                         eval_targets_for_sdr, pred_targets_for_sdr = tuple(rearrange(t, 'b t ... n -> (b ...) t n') for t in (eval_targets, pred_targets))
 
-                        # use simplest sdr (not si)
+                        # calculate sdr
 
-                        sdrs = calculate_sdr(eval_targets_for_sdr, pred_targets_for_sdr)
+                        sdrs = self.sdr_eval_fn(eval_targets_for_sdr, pred_targets_for_sdr)
 
                         sdrs = reduce(sdrs, 'b t -> t', 'mean')
 
