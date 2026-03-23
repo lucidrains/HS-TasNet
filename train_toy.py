@@ -23,21 +23,21 @@ class DummySineDataset(Dataset):
     ):
         super().__init__()
         num_samples = int(sample_rate * duration)
-        
+
         t = linspace(0, duration, num_samples)
-        
+
         targets = []
 
         for i in range(num_sources):
             freq = freqs[i % len(freqs)]
             sine = sin(2 * pi * freq * t)
-            
+
             target = stack((sine, sine), dim = 0)
             targets.append(target)
-            
+
         self.targets = stack(targets, dim = 0)
         self.audio = self.targets.sum(dim = 0)
-        
+
     def __len__(self):
         return 2
 
@@ -57,9 +57,9 @@ if __name__ == '__main__':
         overlap_len = 512,
         num_sources = 4
     )
-    
+
     dataset = DummySineDataset(duration = 1.0)
-    
+
     trainer = Trainer(
         model = model,
         dataset = dataset,
@@ -81,11 +81,11 @@ if __name__ == '__main__':
         use_ema = False,
         cpu = False
     )
-    
+
     try:
         from termcolor import cprint
         cprint('\n[INFO] For an overfitted single-sample sine wave experiment, a capable source separation model should rapidly achieve an SI-SDR >15.0 dB.\n', 'cyan')
     except ImportError:
         print('\n[INFO] For an overfitted single-sample sine wave experiment, a capable source separation model should rapidly achieve an SI-SDR >15.0 dB.\n')
-        
+
     trainer()
