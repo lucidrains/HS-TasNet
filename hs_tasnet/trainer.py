@@ -74,10 +74,10 @@ def not_improved_last_n_steps(losses, steps):
     ):
         return False
 
-    best_loss = losses.amin()
+    best_loss_before_n = losses[:-steps].amin()
     last_n_losses = losses[-steps:]
 
-    return (last_n_losses >= best_loss).all().item()
+    return (last_n_losses >= best_loss_before_n).all().item()
 
 # sdr
 
@@ -460,7 +460,8 @@ class Trainer(Module):
         augment_channel_swap = True,
         augment_remix = True,
         augment_remix_frac = 0.5,
-        augment_remix_keep_batch_size_same = False
+        augment_remix_keep_batch_size_same = False,
+        early_stop_if_sdr_greater_than = None
     ):
         super().__init__()
 
@@ -681,6 +682,8 @@ class Trainer(Module):
         assert early_stop_if_not_improved_steps >= 2
         self.early_stop_steps = early_stop_if_not_improved_steps
 
+        self.early_stop_if_sdr_greater_than = early_stop_if_sdr_greater_than
+
         # prepare eval
 
         if self.needs_eval:
@@ -805,6 +808,7 @@ class Trainer(Module):
                             targets = eval_targets,
                             audio_lens = eval_audio_lens,
                             auto_curtail_length_to_multiple = True,
+                            auto_causal_pad = True,
                             return_targets_with_loss = True
                         )
 
@@ -855,6 +859,10 @@ class Trainer(Module):
                     self.print(f'[{epoch}] eval average SDR: {avg_eval_sdr.item():.3f}')
 
                     eval_logs.update(avg_valid_sdr = avg_eval_sdr)
+
+                    if exists(self.early_stop_if_sdr_greater_than) and avg_eval_sdr.item() >= self.early_stop_if_sdr_greater_than:
+                        self.print(f'\nearly stopping since target SDR of {self.early_stop_if_sdr_greater_than} was reached')
+                        exceeds_max_step = True
 
                 if self.is_main:
                     model = self.unwrapped_model

@@ -1,6 +1,6 @@
 [project]
 name = "HS-TasNet"
-version = "0.2.34"
+version = "0.3.0"
 description = "HS TasNet"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -66,3 +66,11 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["hs_tasnet"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "hs_tasnet",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]

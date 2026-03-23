@@ -138,8 +138,21 @@ class STFT(Module):
 
         self.eps = eps
 
+        # precompute steady-state streaming envelope
+
+        window_sq = repeat(window.square(), 'w -> 1 w t', t = 3)
+
+        steady_env = F.fold(
+            window_sq,
+            output_size = (1, hop_length * 2 + win_length),
+            kernel_size = (1, win_length),
+            stride = (1, hop_length)
+        )[0, 0, 0]
+
+        self.register_buffer('streaming_envelope', steady_env[hop_length:hop_length + win_length])
+
     @compiler.disable()
-    def inverse(self, spec):
+    def inverse(self, spec, is_streaming = False):
         n_fft, hop_length, win_length, window = self.n_fft, self.hop_length, self.win_length, self.window
 
         batch, freqs, frames = spec.shape
@@ -162,6 +175,9 @@ class STFT(Module):
         )[:, 0, 0]
 
         # window envelope
+
+        if is_streaming:
+            return divide('b n, n', y, self.streaming_envelope.clamp(min = self.eps))
 
         window_sq = repeat(window.square(), 'w -> 1 w t', t = frames)
 
@@ -480,8 +496,10 @@ class HSTasNet(Module):
         chunk_len = self.overlap_len
         self.eval()
 
-        past_audio = torch.zeros((self.audio_channels, self.overlap_len), device = device)
+        past_audio = torch.zeros((self.audio_channels, chunk_len), device = device)
+
         hiddens = None
+        overlap_add_buffer = None
 
         @torch.inference_mode()
         def fn(audio_chunk: ndarray | Tensor):
@@ -489,6 +507,7 @@ class HSTasNet(Module):
 
             nonlocal hiddens
             nonlocal past_audio
+            nonlocal overlap_add_buffer
 
             is_numpy_input = isinstance(audio_chunk, ndarray)
 
@@ -503,36 +522,34 @@ class HSTasNet(Module):
             if exists(device):
                 audio_chunk = audio_chunk.to(device)
 
-            # auto repeat mono to stereo if model is trained with stereo but received audio is mono
-
             if auto_convert_to_stereo and self.stereo and audio_chunk.shape[0] == 1:
                 audio_chunk = repeat(audio_chunk, '1 d -> s d', s = 2)
 
-            # add past audio chunk
-
             full_chunk = cat((past_audio, audio_chunk), dim = -1)
-
             full_chunk = rearrange(full_chunk, '... -> 1 ...')
 
-            # forward chunk with past overlap through model
-
-            transformed, hiddens = self.forward(full_chunk, hiddens = hiddens, return_reduced_sources = return_reduced_sources)
+            transformed, hiddens = self.forward(full_chunk, hiddens = hiddens, return_reduced_sources = return_reduced_sources, is_streaming = True)
 
             transformed = rearrange(transformed, '1 ... -> ...')
 
+            if not exists(overlap_add_buffer):
+                overlap_add_buffer = torch.zeros_like(transformed)
+
+            overlap_add_buffer += transformed
+
+            out = overlap_add_buffer[..., :chunk_len].clone()
+
+            overlap_add_buffer = cat((overlap_add_buffer[..., chunk_len:], torch.zeros_like(out)), dim = -1)
+
             if squeezed_audio_channel:
-                transformed = rearrange(transformed, '... 1 n -> ... n')
+                out = rearrange(out, '... 1 n -> ... n')
 
             if is_numpy_input:
-                transformed = transformed.cpu().numpy()
-
-            # save next overlap chunk for next timestep
+                out = out.cpu().numpy()
 
             past_audio = audio_chunk
 
-            return transformed[..., -chunk_len:]
-
-        # print latency if needed
+            return out
 
         if print_latency:
             fn = decorate_print_latency('stream chunk')(fn)
@@ -660,7 +677,8 @@ class HSTasNet(Module):
         auto_causal_pad = None,
         auto_curtail_length_to_multiple = True,
         return_unreduced_loss = False,
-        return_targets_with_loss = False
+        return_targets_with_loss = False,
+        is_streaming = False
     ):
         auto_causal_pad = default(auto_causal_pad, self.training)
 
@@ -711,10 +729,11 @@ class HSTasNet(Module):
 
             audio_mask = lens_to_mask(audio_lens, audio_len)
 
-        # pad the audio manually on the left side for causal, and set stft center False
+        # causal pad on both sides for proper overlap-add
 
-        if auto_causal_pad:
-            audio = F.pad(audio, (self.causal_pad, 0), value = 0.)
+        if auto_causal_pad and not is_streaming:
+            causal_pad = self.causal_pad
+            audio = F.pad(audio, (causal_pad, causal_pad), value = 0.)
 
         # handle spec encoding
 
@@ -814,7 +833,7 @@ class HSTasNet(Module):
 
             complex_spec_per_source = torch.polar(scaled_magnitude, phase)
 
-        recon_audio_from_spec = self.stft.inverse(complex_spec_per_source)
+        recon_audio_from_spec = self.stft.inverse(complex_spec_per_source, is_streaming = is_streaming)
 
         recon_audio_from_spec = rearrange(recon_audio_from_spec, '(b s t) ... -> b t s ...', b = batch, s = self.audio_channels)
 
@@ -837,10 +856,10 @@ class HSTasNet(Module):
         if audio_is_squeezed:
             recon_audio = rearrange(recon_audio, 'b s 1 n -> b s n')
 
-        # excise out the causal padding
+        # excise out the causal padding on both ends
 
-        if auto_causal_pad:
-            recon_audio = recon_audio[..., self.causal_pad:]
+        if auto_causal_pad and not is_streaming:
+            recon_audio = recon_audio[..., causal_pad:-causal_pad]
 
         if exists(targets):
             recon_loss = F.l1_loss(recon_audio, targets, reduction = 'none' if need_audio_mask or return_unreduced_loss else 'mean') # they claim a simple l1 loss is better than all the complicated stuff of past
