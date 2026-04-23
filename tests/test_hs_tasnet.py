@@ -8,6 +8,7 @@ import torch
 @param('small', (False, True))
 @param('stereo', (False, True))
 @param('use_gru', (False, True))
+@param('use_mingru', (False, True))
 @param('var_audio_lens', (False, True))
 @param('spec_branch_use_phase', (False, True))
 @param('torch_compile', (False, True))
@@ -15,17 +16,20 @@ def test_model(
     small,
     stereo,
     use_gru,
+    use_mingru,
     var_audio_lens,
     spec_branch_use_phase,
     torch_compile
 ):
     from hs_tasnet.hs_tasnet import HSTasNet
+    from hs_tasnet.alternative_rnns import minGRUWrapper
 
     model = HSTasNet(
         dim = 512,
         small = small,
         stereo = stereo,
         use_gru = use_gru,
+        rnn_klass = minGRUWrapper if use_mingru else None,
         spec_branch_use_phase = spec_branch_use_phase,
         torch_compile = torch_compile
     )

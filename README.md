@@ -108,6 +108,24 @@ $ uv run train.py --use-wandb
 
 To wipe the previous checkpoints and evaluated results, append `--clear-folders`
 
+
+## Alternative RNNs
+
+The architecture defaults to using PyTorch's `LSTM` (or `GRU`), but you can easily substitute it for any other module by passing an `rnn_klass` to the `HSTasNet` constructor, as long as it adheres to a specific interface (read `alternative_rnns.py`)
+
+For example, to use the [minGRU](https://github.com/lucidrains/minGRU-pytorch) architecture:
+
+```python
+import torch
+from hs_tasnet import HSTasNet
+from hs_tasnet.alternative_rnns import minGRUWrapper
+
+model = HSTasNet(rnn_klass = minGRUWrapper)
+
+audio = torch.randn(1, 2, 204800)
+separated_audios, _ = model(audio)
+```
+
 ## Test
 
 ```shell
@@ -135,5 +153,14 @@ This open sourced work is sponsored by [Sweet Spot](https://github.com/sweetspot
     archivePrefix = {arXiv},
     primaryClass = {eess.AS},
     url      = {https://arxiv.org/abs/2402.17701},
+}
+```
+
+```bibtex
+@inproceedings{Feng2024WereRA,
+    title   = {Were RNNs All We Needed?},
+    author  = {Leo Feng and Frederick Tung and Mohamed Osama Ahmed and Yoshua Bengio and Hossein Hajimirsadegh},
+    year    = {2024},
+    url     = {https://api.semanticscholar.org/CorpusID:273025630}
 }
 ```

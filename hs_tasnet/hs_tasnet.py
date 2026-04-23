@@ -5,6 +5,7 @@ import time
 import pickle
 from pathlib import Path
 from functools import partial, wraps
+from typing import Callable
 
 import torchaudio
 from torchaudio import transforms as T
@@ -253,6 +254,7 @@ class HSTasNet(Module):
         num_sources = 4,      # drums, bass, vocals, other
         torch_compile = False,
         use_gru = False,
+        rnn_klass: Callable[..., Module] | None = None,
         spec_branch_use_phase = True,
         norm_before_mask_estimate = True # for some reason, training is unstable without a norm - improvise by adding an RMSNorm before final projection
     ):
@@ -346,7 +348,7 @@ class HSTasNet(Module):
 
         # rnn
 
-        rnn_klass = LSTM if not use_gru else GRU
+        rnn_klass = default(rnn_klass, LSTM if not use_gru else GRU)
 
         self.pre_spec_branch = rnn_klass(dim, dim, lstm_num_layers)
         self.post_spec_branch = rnn_klass(dim, dim, lstm_num_layers)
