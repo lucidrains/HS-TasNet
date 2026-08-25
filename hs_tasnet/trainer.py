@@ -436,6 +436,7 @@ class Trainer(Module):
         batch_size = 128,
         grad_accum_every = 1,
         learning_rate = 3e-4,
+        max_grad_norm = 1.,
         max_epochs = 10,
         max_steps = None,
         accelerate_kwargs: dict = dict(),
@@ -486,6 +487,8 @@ class Trainer(Module):
         self.max_epochs = max_epochs
 
         self.max_steps = max_steps
+
+        self.max_grad_norm = max_grad_norm
 
         # saving
 
@@ -766,8 +769,11 @@ class Trainer(Module):
 
                     self.log(loss = loss)
 
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
+                    if acc.sync_gradients:
+                        acc.clip_grad_norm_(self.model.parameters(), max_norm = self.max_grad_norm)
+
+                        self.optimizer.step()
+                        self.optimizer.zero_grad()
 
                 # max steps
 

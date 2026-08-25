@@ -29,7 +29,9 @@ def train(
     decay_lr_steps = 3,
     early_stop_steps = 10,
     use_full_musdb_dataset = False,
-    full_musdb_dataset_root = "./full-musdb-dataset"
+    full_musdb_dataset_root = "./full-musdb-dataset",
+    dataset_max_seconds = 7.,       # random segment length in seconds, as in the demucs v2 training pipeline used by the paper
+    max_grad_norm = 1.
 ):
 
     model = HSTasNet(
@@ -50,6 +52,8 @@ def train(
         batch_size = batch_size,
         max_steps = max_steps,
         max_epochs = max_epochs,
+        dataset_max_seconds = dataset_max_seconds,
+        max_grad_norm = max_grad_norm,
         use_wandb = use_wandb,
         experiment_project = wandb_project,
         experiment_run_name = wandb_run_name,
