@@ -5,7 +5,6 @@
 # ]
 # ///
 
-import torch
 from torch import stack, sin, pi, linspace
 from torch.utils.data import Dataset
 

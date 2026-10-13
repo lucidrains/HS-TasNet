@@ -126,6 +126,19 @@ audio = torch.randn(1, 2, 204800)
 separated_audios, _ = model(audio)
 ```
 
+Or the [Log-Depth Recurrent Modeling (ARGRC)](https://arxiv.org/abs/2609.28212) architecture:
+
+```python
+import torch
+from hs_tasnet import HSTasNet
+from hs_tasnet.alternative_rnns import ARGRCWrapper
+
+model = HSTasNet(rnn_klass = ARGRCWrapper)
+
+audio = torch.randn(1, 2, 204800)
+separated_audios, _ = model(audio)
+```
+
 ## Test
 
 ```shell
@@ -164,3 +177,16 @@ This open sourced work is sponsored by [Sweet Spot](https://github.com/sweetspot
     url     = {https://api.semanticscholar.org/CorpusID:273025630}
 }
 ```
+
+```bibtex
+@misc{wang2026logdepthrecurrentlanguagemodeling,
+    title    = {Log-Depth Recurrent Language Modeling},
+    author   = {Yiqin Wang and Nuri Cingillioglu and Charles Pert},
+    year     = {2026},
+    eprint   = {2609.28212},
+    archivePrefix = {arXiv},
+    primaryClass = {cs.LG},
+    url      = {https://arxiv.org/abs/2609.28212},
+}
+```
+

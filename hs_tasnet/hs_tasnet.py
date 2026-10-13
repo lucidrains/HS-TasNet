@@ -19,14 +19,14 @@ from loguru import logger
 import torch
 import torch.nn.functional as F
 from torch.fft import irfft
-from torch import nn, compiler, Tensor, tensor, is_tensor, cat, stft, hann_window, view_as_complex, view_as_real
-from torch.nn import LSTM, GRU, ConvTranspose1d, Module, ModuleList
+from torch import nn, compiler, Tensor, tensor, cat, hann_window, view_as_complex, view_as_real
+from torch.nn import LSTM, GRU, ConvTranspose1d, Module
 
 from numpy import ndarray
 
 import einx
-from einx import add, multiply, divide
-from einops import rearrange, repeat, reduce, pack, unpack
+from einx import multiply, divide
+from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange
 
 import librosa
@@ -250,7 +250,7 @@ class HSTasNet(Module):
         segment_len = 1024,
         overlap_len = 512,
         n_fft = 1024,
-        sample_rate = 44_100, # they use 41k sample rate
+        sample_rate = 44_100, # 44.1kHz as in the paper
         num_sources = 4,      # drums, bass, vocals, other
         torch_compile = False,
         use_gru = False,
@@ -498,6 +498,10 @@ class HSTasNet(Module):
         chunk_len = self.overlap_len
         self.eval()
 
+        # default to the device the model is on, so numpy chunks coming from sounddevice work out of the box
+
+        device = default(device, self.device)
+
         past_audio = torch.zeros((self.audio_channels, chunk_len), device = device)
 
         hiddens = None
@@ -594,7 +598,9 @@ class HSTasNet(Module):
 
         duration_ms = int(duration_seconds * 1000)
 
-        # sounddevice streaming
+        # sounddevice streaming - the model consumes exactly `overlap_len` samples per callback
+
+        stream_kwargs.setdefault('blocksize', self.overlap_len)
 
         with sd.Stream(
             **stream_kwargs,
@@ -614,6 +620,9 @@ class HSTasNet(Module):
     ):
         if isinstance(input_file, str):
             input_file = Path(input_file)
+
+        if isinstance(output_file, str):
+            output_file = Path(output_file)
 
         assert len(return_reduced_sources) > 0
         assert input_file.exists(), f'{str(input_file)} not found'
@@ -663,7 +672,7 @@ class HSTasNet(Module):
         # save output file
 
         if not exists(output_file):
-            output_file = Path(input_file.parents[-2] / f'{input_file.stem}-out.mp3')
+            output_file = input_file.parent / f'{input_file.stem}-out.mp3'
 
         assert output_file != input_file
 
@@ -682,7 +691,9 @@ class HSTasNet(Module):
         return_targets_with_loss = False,
         is_streaming = False
     ):
-        auto_causal_pad = default(auto_causal_pad, self.training)
+        # pad both ends so the frames line up with how the model is trained and streamed (1 hop of lookahead), excised before returning
+
+        auto_causal_pad = default(auto_causal_pad, not is_streaming)
 
         assert auto_curtail_length_to_multiple or divisible_by(audio.shape[-1], self.segment_len)
 
@@ -703,7 +714,7 @@ class HSTasNet(Module):
 
         assert not exists(targets) or audio.shape[-1] == targets.shape[-1]
 
-        assert not is_empty(audio), f'audio is empty, probably insufficient lengthed audio given segment length and auto-rounding down the length'
+        assert not is_empty(audio), 'audio is empty, probably insufficient lengthed audio given segment length and auto-rounding down the length'
 
         # their small version probably does not need a skip connection
 
@@ -757,7 +768,7 @@ class HSTasNet(Module):
 
         to_relu, to_sigmoid = self.conv_encode(audio).chunk(2, dim = 1)
 
-        basis = to_relu.relu() * to_sigmoid.sigmoid() # non-negative basis (1024)
+        basis = to_relu.relu() * to_sigmoid.sigmoid() # non-negative basis
 
         # basis to waveform embed for mask estimation
         # paper mentions linear for any mismatched dimensions

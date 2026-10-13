@@ -52,12 +52,12 @@ def test_model(
         return_reduced_sources = [0, 2] # say we only want drum and vocals, filtering out the bass and other
     )
 
-    out1 = fn(chunk)
-    out2 = fn(chunk)
-    out3 = fn(chunk)
+    fn(chunk)
+    fn(chunk)
+    out = fn(chunk)
 
     prec_shape = (2,) if stereo else ()
-    assert out3.shape == (*prec_shape, 512)
+    assert out.shape == (*prec_shape, 512)
 
 @param('with_eval', (False, True))
 @param('with_ema', (False, True))
@@ -180,3 +180,24 @@ def test_musdb(stereo):
 
     trainer = Trainer(model, dataset = mus, batch_size = 4, cpu = True, max_steps = 2)
     trainer()
+
+def test_argrc_wrapper():
+    from hs_tasnet import HSTasNet
+    from hs_tasnet.alternative_rnns import ARGRCWrapper
+
+    model = HSTasNet(
+        dim = 64,
+        small = True,
+        stereo = False,
+        rnn_klass = ARGRCWrapper,
+    )
+
+    audio = torch.randn(2, 1024 * 4)
+    targets = torch.rand(2, 4, 1024 * 4)
+    loss = model(audio, targets = targets)
+    loss.backward()
+
+    chunk = torch.randn(512).numpy()
+    fn = model.init_stateful_transform_fn(return_reduced_sources = [0, 2])
+    out = fn(chunk)
+    assert out.shape == (512,)

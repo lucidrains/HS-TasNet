@@ -6,10 +6,8 @@ from pathlib import Path
 
 import torchaudio
 
-import musdb
-
 import torch
-from torch import cat, stack, tensor, from_numpy
+from torch import cat, stack, tensor, from_numpy, Tensor
 import torch.nn.functional as F
 from torch.nn import Module
 from torch.optim import Adam
@@ -19,15 +17,13 @@ from torch.nn.utils.rnn import pad_sequence
 
 import numpy as np
 
-import matplotlib.pyplot as plt
-
 from accelerate import Accelerator
 
 from hs_tasnet.hs_tasnet import HSTasNet
 
 from ema_pytorch import EMA
 
-from einops import rearrange, repeat, reduce
+from einops import rearrange, reduce
 
 from musdb import DB as MusDB
 
@@ -123,9 +119,14 @@ def default_collate_fn(
 ):
     audios, targets = tuple(zip(*data))
 
-    audios, targets = tuple(pad_sequence(t) for t in (audios, targets))
+    # lengths must be taken before padding
 
     audio_lens = tuple(t.shape[-1] for t in audios)
+
+    # pad along the last (time) dimension
+
+    audios = pad_sequence(tuple(a.movedim(-1, 0) for a in audios)).movedim(1, -1)
+    targets = pad_sequence(tuple(t.movedim(-1, 0) for t in targets)).movedim(1, -1)
 
     return audios, targets, tensor(audio_lens, device = audios.device)
 
@@ -192,7 +193,7 @@ class MusDB18HQ(Dataset):
         audio_length = audio.shape[-1]
 
         if exists(self.max_audio_length_seconds):
-            max_length = self.max_audio_length_seconds * sample_rate
+            max_length = int(self.max_audio_length_seconds * sample_rate)
 
             if audio_length > max_length:
 
@@ -208,7 +209,7 @@ class MusDB18HQ(Dataset):
 # wrap the musdb MultiTrack if detected
 
 class MusDBDataset(Dataset):
-    def __init__(self, musdb_data: MultiTrack):
+    def __init__(self, musdb_data):
         self.musdb_data = musdb_data
 
     def __len__(self):
@@ -273,7 +274,7 @@ class StereoToMonoDataset(Dataset):
 class MaxSamples(Dataset):
     def __init__(self, dataset: Dataset, max_samples):
         self.dataset = dataset
-        self.max_samples = max_samples
+        self.max_samples = int(max_samples)
 
     def __len__(self):
         return len(self.dataset)
@@ -351,7 +352,7 @@ class ChannelSwapAugmentation(Dataset):
         self.dataset = dataset
         self.prob = prob
 
-    def __len__(self, len):
+    def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
@@ -529,7 +530,7 @@ class Trainer(Module):
             else:
                 musdb_kwargs = dict(download = True)
 
-            musdb_dataset = musdb.DB(**musdb_kwargs)
+            musdb_dataset = MusDB(**musdb_kwargs)
 
             datasets.append(musdb_dataset)
 
@@ -549,7 +550,7 @@ class Trainer(Module):
         # maybe split dataset for eval
 
         need_split_train_dataset = random_split_dataset_for_eval_frac > 0
-        assert not (need_split_train_dataset and exists(eval_dataset)), f'`eval_dataset` must not be passed in if `random_split_dataset_for_eval_frac` set greater than 0.'
+        assert not (need_split_train_dataset and exists(eval_dataset)), '`eval_dataset` must not be passed in if `random_split_dataset_for_eval_frac` set greater than 0.'
 
         if not exists(eval_dataset) and need_split_train_dataset:
             train_size = int((1. - random_split_dataset_for_eval_frac) * len(all_dataset))
@@ -580,6 +581,9 @@ class Trainer(Module):
         # augmentations
         # only for training `train_dataset`
 
+        if augment_channel_swap:
+            train_dataset = ChannelSwapAugmentation(train_dataset)
+
         if augment_gain:
             train_dataset = GainAugmentation(train_dataset)
 
@@ -603,6 +607,8 @@ class Trainer(Module):
         # dataloader
 
         dataloader = DataLoader(train_dataset, batch_size = batch_size, drop_last = True, shuffle = True, collate_fn = collate_fn)
+
+        assert len(dataloader) > 0, f'no full batches to train on with a batch size of {batch_size} - lower the batch size or add more data'
 
         eval_dataloader = None
 
@@ -631,7 +637,7 @@ class Trainer(Module):
             try:
                 import wandb
             except ImportError:
-                print(f'install `wandb` first for experiment tracking')
+                print('install `wandb` first for experiment tracking')
 
             self.accelerator.init_trackers(experiment_project, config = experiment_hparams)
 
@@ -697,8 +703,6 @@ class Trainer(Module):
         # step
 
         self.register_buffer('step', tensor(0))
-
-        self.register_buffer('zero', tensor(0.), persistent = False)
 
     def clear_folders(self):
         rmtree(str(self.checkpoint_folder), ignore_errors = True)
@@ -798,8 +802,6 @@ class Trainer(Module):
             if self.needs_eval:
 
                 # evaluation at the end of each epoch
-
-                avg_eval_loss = self.zero
 
                 eval_losses = []
                 eval_sdr = []
@@ -959,7 +961,7 @@ class Trainer(Module):
                 # early stop if criteria met
 
                 if not_improved_last_n_steps(last_n_eval_losses, self.early_stop_steps):
-                    self.print(f'early stopping at epoch {epoch} since last three eval losses have not improved: {last_n_eval_losses.tolist()}')
+                    self.print(f'early stopping at epoch {epoch} since eval loss has not improved for {self.early_stop_steps} evaluations: {last_n_eval_losses.tolist()}')
                     break
 
             if exceeds_max_step:
@@ -967,8 +969,9 @@ class Trainer(Module):
 
         # cleanup accelerator
 
-        save_checkpoints(-1) # save one last time with checkpoint index -1
+        if self.is_main:
+            save_checkpoints(-1) # save one last time with checkpoint index -1
 
         acc.end_training()
 
-        self.print(f'training complete')
+        self.print('training complete')

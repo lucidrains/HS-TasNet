@@ -1,12 +1,12 @@
 [project]
 name = "HS-TasNet"
-version = "0.3.3"
+version = "0.3.4"
 description = "HS TasNet"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">= 3.9"
+requires-python = ">= 3.10"
 license = { file = "LICENSE" }
 keywords = [
     'artificial intelligence',
@@ -20,7 +20,7 @@ classifiers=[
     'Intended Audience :: Developers',
     'Topic :: Scientific/Engineering :: Artificial Intelligence',
     'License :: OSI Approved :: MIT License',
-    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
 ]
 
 dependencies = [
@@ -32,6 +32,7 @@ dependencies = [
     "loguru",
     "matplotlib",
     "minGRU-pytorch",
+    "log-depth-recurrent-modeling",
     "musdb",
     "sounddevice",
     "soundfile",

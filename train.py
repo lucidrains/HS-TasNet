@@ -8,10 +8,8 @@
 
 # model
 
-from shutil import rmtree
 import fire
 
-import musdb
 from hs_tasnet import HSTasNet, Trainer
 
 def train(
@@ -40,8 +38,6 @@ def train(
     )
 
     # trainer
-
-    from hs_tasnet import Trainer
 
     trainer = Trainer(
         model,
